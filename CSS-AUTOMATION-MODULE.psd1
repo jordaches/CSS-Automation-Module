@@ -1120,3 +1120,177 @@ if($vm.DiagnosticsProfile.bootDiagnostics.storageUri -ne $null)
 #endregion
     return ($hash | ConvertTo-Json -Depth 10)
 }
+
+function New-DynamicSearchFilter
+{
+    <#
+    .Synopsis
+    Dynamic Search Filter Creator for Multiple Arguments
+    .DESCRIPTION
+
+    This function builds a Dynamic Search Filter string for Powershell filters within If Statements or Where statements. Instead of builing multiple ifs within a statement, let Powershell do it for you :)
+    
+    This is usefull in orchestration environments where the string get's created from a different output.
+    .
+    .EXAMPLE
+
+        $Value = New-DynamicSearchFilter -PowershellProperty '$_.Name' -SubComparisonOperator '-match' -ComparisonOperator '-or' -String 'BITS,WORKSTATION,SPOOLER,SECLOGON'
+
+        $Value = ($_.Name -match 'BITS') -or ($_.Name -match 'WORKSTATION') -or ($_.Name -match 'SECLOGON')     
+
+        Get-Service | Where ([scriptblock]::Create($Value))
+
+        Status   Name               DisplayName                           
+        ------   ----               -----------                           
+        Stopped  BITS               Background Intelligent Transfer Ser...
+        Running  LanmanWorkstation  Workstation                           
+        Stopped  seclogon           Secondary Logon 
+
+    .OUTPUTS
+    [String] object
+    #>
+    [CmdletBinding(DefaultParameterSetName='Main Set 0', 
+                  SupportsShouldProcess=$false, 
+                  PositionalBinding=$false,
+                  HelpUri = 'http://www.ExchangeSA.co.za/ -or Jordach.Singh@ExchangeSA.co.za',
+                  ConfirmImpact='Low')]
+    [Alias()]
+    [OutputType([String])]
+    Param
+    (
+        # Input Powershell Pipline Character or Property as a plain string with single quotes. Eg.: '$_' or '$_.Property1' or '$_.Name' etc.
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=0,ParameterSetName='Main Set 0')]
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=0,ParameterSetName='Main Set 1')]
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=0,ParameterSetName='Main Set 2')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $PowershellProperty,
+
+        # Input Powershell Comparison Operator as a plain string with single quotes and no spaces. Eg.: '-and' or '-or' or '-match' etc. This will form part of the inner expression.
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=1,ParameterSetName='Main Set 0')]
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=1,ParameterSetName='Main Set 1')]
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=1,ParameterSetName='Main Set 2')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $SubComparisonOperator,
+
+        # Input Powershell Comparison Operator as a plain string with single quotes and no spaces. Eg.: '-and' or '-or' or '-match' etc. This will form part of the outer expression.
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=2,ParameterSetName='Main Set 0')]
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=2,ParameterSetName='Main Set 1')]
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=2,ParameterSetName='Main Set 2')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $ComparisonOperator,
+
+        # Input Powershell data as a plain comma seperated string with single quotes. Eg.: 'value1,value2,value3'. This will form part of value for each inner expression. In the examplem there will be 3 comparisons done.
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=3,ParameterSetName='Main Set 0')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $String,
+
+        # Input Powershell data as an string array object. Eg.: @('value1','value2','value3') etc. This will form part of value for each inner expression. In the examplem there will be 3 comparisons done.
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=3,ParameterSetName='Main Set 1')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [array]
+        $StringArray,
+
+        # Input Powershell data as an integer array object. Eg.: @(7,25,9,989,12) etc. This will form part of value for each inner expression. In the examplem there will be 5 comparisons done.
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=3,ParameterSetName='Main Set 2')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [array]
+        $IntArray
+    )
+
+    if ($String)
+    {
+        $stringarr = $string.Split(',')
+    }
+    elseif($IntArray)
+    {
+        $stringarr = $IntArray
+    }
+    elseif($StringArray)
+    {
+        $stringarr = $StringArray
+    }
+
+        $newstring = ''
+    if ($stringarr.Count -gt 1)
+    {
+        for ($i = 0; $i -lt ($stringarr.Count - 2); $i++)
+        {
+            if (($stringarr[$i]).getType() -eq [string])
+            {
+                $newstring += "($PowershellProperty $SubComparisonOperator '$($stringarr[$i])') $ComparisonOperator "
+            }
+            else
+            {
+                $newstring += "($PowershellProperty $SubComparisonOperator $($stringarr[$i])) $ComparisonOperator "
+            }
+        }
+        if (($stringarr[$i]).getType() -eq [string])
+        {
+            $newstring += "($PowershellProperty $SubComparisonOperator '$($stringarr[-1])')"
+        }
+        else
+        {
+            $newstring += "($PowershellProperty $SubComparisonOperator $($stringarr[-1]))"
+        }
+    }
+    return $newstring
+}
+
+function Get-VMWareSerialNumber($UUID)
+{
+    $uuid = $uuid.Replace('-','')
+    $sn = ''
+    for ($i=0;$i -lt $uuid.Length; $i+=2)
+    {
+        $sn += $uuid.Substring($i,2)
+        $sn += ' '
+    }
+    $str1 = $sn.Substring(0,23)
+    $str2 = $sn.Substring(24)
+    $sn = ("VMWARE-$str1-$str2").ToUpper()
+    return $sn
+}
+
+function Get-VmwareVmToolStatus($VC,$UserName,$Password)
+{
+    try
+    {
+        Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Scope Session -ProxyPolicy NoProxy -ParticipateInCeip:$false -Confirm:$false -ErrorAction Stop | Out-Null
+        Connect-VIServer $VC -Username $UserName -Password $Password -ErrorAction Stop | Out-Null
+        Write-Verbose "trying $vc" -Verbose
+        $VMObjects = Get-VM -ErrorAction Stop
+        $VMObjects | 
+            ? {
+                (($_.ExtensionData.Summary.Guest.ToolsVersionStatus -match 'guestToolsNeedUpgrade') -or 
+                ($_.ExtensionData.Summary.Guest.ToolsVersionStatus -match 'guestToolsNotInstalled')) -and 
+                (($_.Name -notmatch 'template') -and 
+                ($_.Name -notmatch 'shdort') -and 
+                ($_.Name -notmatch 'Z-VRA'))
+                } |
+                    Select  @{n='HostName';e={$_.Guest.HostName}},
+                    Name,
+                    @{n='UUID';e={$_.ExtensionData.Summary.Config.UUID}},
+                    @{n='SerialNumber';e={Get-VMWareSerialNumber -UUID $_.ExtensionData.Summary.Config.UUID}},
+                    @{n='HardwareVersion';e={$_.Version}},
+                    @{n='ToolsVersion';e={($_ | Get-VMGuest).ToolsVersion}},
+                    @{n='ToolsStatus';e={(SplitText($_.ExtensionData.Guest.ToolsStatus)) -join ' '}},
+                    @{n='ToolsRunningStatus';e={(SplitText($_.ExtensionData.Guest.ToolsRunningStatus)) -join ' '}}
+        Disconnect-VIServer $vc -Confirm:$false -Force | Out-Null
+        return $newobj
+        exit 0
+    }
+    catch
+    {
+        exit 1
+    }
+}
