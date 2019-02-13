@@ -1213,17 +1213,17 @@ function New-DynamicSearchFilter
     }
     elseif($IntArray)
     {
-        $stringarr = $IntArray
+        [array]$stringarr = $IntArray
     }
     elseif($StringArray)
     {
-        $stringarr = $StringArray
+        [array]$stringarr = $StringArray
     }
 
         $newstring = ''
     if ($stringarr.Count -gt 1)
     {
-        for ($i = 0; $i -lt ($stringarr.Count - 2); $i++)
+        for ($i = 0; $i -lt ($stringarr.Count - 1); $i++)
         {
             if (($stringarr[$i]).getType() -eq [string])
             {
@@ -1243,6 +1243,10 @@ function New-DynamicSearchFilter
             $newstring += "($PowershellProperty $SubComparisonOperator $($stringarr[-1]))"
         }
     }
+    elseif ($stringarr.Count -eq 1)
+    {
+       "($PowershellProperty $SubComparisonOperator $($stringarr[-1]))" 
+    }
     return $newstring
 }
 
@@ -1261,22 +1265,15 @@ function Get-VMWareSerialNumber($UUID)
     return $sn
 }
 
-function Get-VmwareVmToolStatus($VC,$UserName,$Password)
+function Get-VmwareVmToolStatus($VC,$UserName,$Password,$serversToSkip)
 {
     try
     {
         Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Scope Session -ProxyPolicy NoProxy -ParticipateInCeip:$false -Confirm:$false -ErrorAction Stop | Out-Null
         Connect-VIServer $VC -Username $UserName -Password $Password -ErrorAction Stop | Out-Null
         Write-Verbose "trying $vc" -Verbose
-        $VMObjects = Get-VM -ErrorAction Stop
-        $VMObjects | 
-            ? {
-                (($_.ExtensionData.Summary.Guest.ToolsVersionStatus -match 'guestToolsNeedUpgrade') -or 
-                ($_.ExtensionData.Summary.Guest.ToolsVersionStatus -match 'guestToolsNotInstalled')) -and 
-                (($_.Name -notmatch 'template') -and 
-                ($_.Name -notmatch 'shdort') -and 
-                ($_.Name -notmatch 'Z-VRA'))
-                } |
+        $VMObjects = Get-VM -ea Stop
+        $newobj = $VMObjects | ? {(($_.ExtensionData.Summary.Guest.ToolsVersionStatus -match 'guestToolsNeedUpgrade') -or ($_.ExtensionData.Summary.Guest.ToolsVersionStatus -match 'guestToolsNotInstalled'))} |
                     Select  @{n='HostName';e={$_.Guest.HostName}},
                     Name,
                     @{n='UUID';e={$_.ExtensionData.Summary.Config.UUID}},
@@ -1286,11 +1283,18 @@ function Get-VmwareVmToolStatus($VC,$UserName,$Password)
                     @{n='ToolsStatus';e={(SplitText($_.ExtensionData.Guest.ToolsStatus)) -join ' '}},
                     @{n='ToolsRunningStatus';e={(SplitText($_.ExtensionData.Guest.ToolsRunningStatus)) -join ' '}}
         Disconnect-VIServer $vc -Confirm:$false -Force | Out-Null
-        return $newobj
-        exit 0
+        if($serversToSkip)
+        {
+            $searchblock = New-DynamicSearchFilter -PowershellProperty '$_.Name' -SubComparisonOperator '-notmatch' -ComparisonOperator '-and' -String $serversToSkip
+            return ($newobj | ? ([scriptblock]::Create($searchblock)))
+        }
+        else
+        {
+            return $newobj
+        }
     }
     catch
     {
-        exit 1
+        Write-Verbose "failed to connect to $vc" -Verbose
     }
 }
