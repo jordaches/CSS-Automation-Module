@@ -1,6 +1,5 @@
 function SplitText($String)
 {
-    #This is to seperate title cased strings to a sentence. eg. SplitText('WhatTheF***')
     [Regex]::Split($String,("(?<!^)(?=[A-Z])"))
 }
 
@@ -26,7 +25,8 @@ function Get-AzureAvailableResources()
 
     #Select Subscription
     $Subscription = Get-AzureRmSubscription -ErrorAction Stop -Verbose
-    Select-AzureRmSubscription -SubscriptionObject $Subscription[0] -Scope Process -Verbose | Out-Null
+    Select-AzureRmSubscription -SubscriptionObject ($Subscription | Select -Last 1) -Verbose | Out-Null
+
     #Build Locations/VmSizes/VMSizes Properties JSON file
     $AzureRMLocations = Get-AzureRmLocation -ErrorAction SilentlyContinue -Verbose
     $VMSizes = Get-AzureRmComputeResourceSku -ErrorAction SilentlyContinue -Verbose | Where {$_.ResourceType -eq 'virtualMachines'}
@@ -135,7 +135,7 @@ function Get-AzureClientResources()
     #Tennant Array
     $TennantArray = @()
     Foreach($t in $Tenant)
-    {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            {
     #Tenant details
     Connect-AzureAD -Credential $Credential -TenantId $t.Id -verbose | Out-Null
     $TenantDetails = Get-AzureADTenantDetail
@@ -147,7 +147,7 @@ function Get-AzureClientResources()
     Foreach($s in $Subscription)
     {
         #Select Subscription
-        Select-AzureRmSubscription -SubscriptionObject $S -verbose -Scope Process | Out-Null
+        Select-AzureRmSubscription -SubscriptionObject $S -verbose | Out-Null
 
         #Get Locations
         $Locations = Get-AzureRmLocation -verbose
@@ -228,23 +228,6 @@ function Get-AzureClientResources()
                                                                 Tags = foreach ($ta in $_.Tags.Keys){[ordered]@{name=$ta;Value=$_.Tags[$ta]}}
                                                             }
                                                         }
-
-                #Log Analytics Workspace
-                $LogAnalyticsWorkspace = @()
-                $LogAnalyticsWorkspace += Get-AzureRmOperationalInsightsWorkspace `
-                                                        -ResourceGroupName $ResourceGroup.ResourceGroupName -verbose |
-                                                        %{
-                                                             [ordered]@{
-                                                                name = $_.Name
-                                                                id = $_.ResourceId
-                                                                Location = $_.Location
-                                                                Tags = foreach ($ta in $_.Tags.Keys){[ordered]@{name=$ta;Value=$_.Tags[$ta]}}
-                                                                Sku = $_.Sku
-                                                                CustomerID = $_.CustomerId
-                                                                PortalUrl = $_.PortalUrl
-                                                            }
-                                                        }
-                
                 #Virtual Machines
                 $VMs = @()
                 $VMs += Get-AzureRmVM `
@@ -267,7 +250,6 @@ function Get-AzureClientResources()
                                     Tags = foreach ($ta in $_.Tags.Keys){[ordered]@{name=$ta;Value=$_.Tags[$ta]}}
                                 }
                             }
-
                 #Recovery Services Vault
                 $RecoveryServicesVault = @()
                 $RecoveryServicesVault += Get-AzureRmRecoveryServicesVault `
@@ -278,29 +260,6 @@ function Get-AzureClientResources()
                                                                         id = $_.ID
                                                                         Location = $_.Location
                                                                         ResourceGroupName = $_.ResourceGroupName
-                                                                        BackupPolicyDetails = Get-AzureRmRecoveryServicesBackupProtectionPolicy -VaultId $_.Id | 
-                                                                            %{
-                                                                                [ordered]@{
-                                                                                    name = $_.Name
-                                                                                    id = $_.Id
-                                                                                    ScheduleRunDays = $_.SchedulePolicy.ScheduleRunDays | %{$_}
-                                                                                    ScheduleRunTimes = $_.SchedulePolicy.ScheduleRunTimes | %{if($_){"$($_.ToString()) SAST"}}
-                                                                                    ScheduleRunFrequency = $_.SchedulePolicy.ScheduleRunFrequency
-                                                                                    IsDailyScheduleEnabled = $_.RetentionPolicy.IsDailyScheduleEnabled
-                                                                                    IsWeeklyScheduleEnabled = $_.RetentionPolicy.IsWeeklyScheduleEnabled
-                                                                                    IsMonthlyScheduleEnabled = $_.RetentionPolicy.IsMonthlyScheduleEnabled
-                                                                                    IsYearlyScheduleEnabled = $_.RetentionPolicy.IsYearlyScheduleEnabled
-                                                                                    DailyScheduleDurationCountInDays = $_.RetentionPolicy.DailySchedule.DurationCountInDays
-                                                                                    DailyScheduleRetentionTimes = $_.RetentionPolicy.DailySchedule.RetentionTimes | %{if($_){"$($_.ToString()) SAST"}}
-                                                                                    WeeklyScheduleDurationCountInDays = $_.RetentionPolicy.WeeklySchedule.DurationCountInDays
-                                                                                    WeeklyScheduleRetentionTimes = $_.RetentionPolicy.WeeklySchedule.RetentionTimes  | %{if($_){"$($_.ToString()) SAST"}}
-                                                                                    MonthlyScheduleDurationCountInDays = $_.RetentionPolicy.MonthlySchedule.DurationCountInDays
-                                                                                    MonthlyScheduleRetentionTimess = $_.RetentionPolicy.MonthlySchedule.RetentionTimess  | %{if($_){"$($_.ToString()) SAST"}}
-                                                                                    YearlyScheduleDurationCountInDays = $_.RetentionPolicy.YearlySchedule.DurationCountInDays
-                                                                                    YearlyScheduleRetentionTimes = $_.RetentionPolicy.YearlySchedule.RetentionTimes  | %{if($_){"$($_.ToString()) SAST"}}
-                                                                                    WorkloadType = $_.WorkloadType
-                                                                                }
-                                                                            }
                                                                     }
                                                                 }
                 #Disks
@@ -759,7 +718,7 @@ function New-AzureRMVMFull ()
 }
 
     Login-AzureRmAccount -Credential $Credential -ErrorAction Stop | Out-Null
-    Select-AzureRmSubscription -SubscriptionId $SubscriptionId -ErrorAction Stop -Scope Process | Out-Null
+    Select-AzureRmSubscription -SubscriptionId $SubscriptionId -ErrorAction Stop | Out-Null
     $vmpassword = Get-RandomPassword -Length 10
     $vmcreds = [pscredential]::new('TssaAdmin',($vmpassword | ConvertTo-SecureString -AsPlainText -Force))
     if($StorageAccountBlobEndpoint -ne 'null')
@@ -1121,34 +1080,85 @@ if($vm.DiagnosticsProfile.bootDiagnostics.storageUri -ne $null)
     return ($hash | ConvertTo-Json -Depth 10)
 }
 
+function Get-VMWareSerialNumber($UUID)
+{
+    $uuid = $uuid.Replace('-','')
+    $sn = ''
+    for ($i=0;$i -lt $uuid.Length; $i+=2)
+    {
+        $sn += $uuid.Substring($i,2)
+        $sn += ' '
+    }
+    $str1 = $sn.Substring(0,23)
+    $str2 = $sn.Substring(24)
+    $sn = ("VMWARE-$str1-$str2").ToUpper()
+    return $sn
+}
+
+function Get-VmwareVmToolStatus($VC,$UserName,$Password,$serversToSkip)
+{
+    try
+    {
+        Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Scope Session -ProxyPolicy NoProxy -ParticipateInCeip:$false -Confirm:$false -ErrorAction Stop | Out-Null
+        Connect-VIServer $VC -Username $UserName -Password $Password -ErrorAction Stop | Out-Null
+        Write-Verbose "trying $vc" -Verbose
+        $VMObjects = Get-VM -ea Stop
+        $newobj = $VMObjects | ? {(($_.ExtensionData.Summary.Guest.ToolsVersionStatus -match 'guestToolsNeedUpgrade') -or ($_.ExtensionData.Summary.Guest.ToolsVersionStatus -match 'guestToolsNotInstalled'))} |
+                    Select  @{n='HostName';e={$_.Guest.HostName}},
+                    Name,
+                    @{n='UUID';e={$_.ExtensionData.Summary.Config.UUID}},
+                    @{n='SerialNumber';e={Get-VMWareSerialNumber -UUID $_.ExtensionData.Summary.Config.UUID}},
+                    @{n='HardwareVersion';e={$_.Version}},
+                    @{n='ToolsVersion';e={($_ | Get-VMGuest).ToolsVersion}},
+                    @{n='ToolsStatus';e={(SplitText($_.ExtensionData.Guest.ToolsStatus)) -join ' '}},
+                    @{n='ToolsRunningStatus';e={(SplitText($_.ExtensionData.Guest.ToolsRunningStatus)) -join ' '}}
+        Disconnect-VIServer $vc -Confirm:$false -Force | Out-Null
+        if($serversToSkip)
+        {
+            $searchblock = New-DynamicSearchFilter -PowershellProperty '$_.Name' -SubComparisonOperator '-notmatch' -ComparisonOperator '-and' -String $serversToSkip
+            return ($newobj | ? ([scriptblock]::Create($searchblock)))
+        }
+        else
+        {
+            return $newobj
+        }
+    }
+    catch
+    {
+        Write-Verbose "failed to connect to $vc" -Verbose
+    }
+}
+
+<#
+.Synopsis
+Dynamic Search Filter Creator for Multiple Arguments
+.DESCRIPTION
+
+This function builds a Dynamic Search Filter string for Powershell filters within If Statements or Where statements. Instead of builing multiple ifs within a statement, let Powershell do it for you :)
+    
+This is usefull in orchestration environments where the string get's created from a different output.
+.
+.EXAMPLE
+
+    $Value = New-DynamicSearchFilter -PowershellProperty '$_.Name' -SubComparisonOperator '-match' -ComparisonOperator '-or' -String 'BITS,WORKSTATION,SPOOLER,SECLOGON'
+
+    $Value
+    
+    ($_.Name -match 'BITS') -or ($_.Name -match 'WORKSTATION') -or ($_.Name -match 'SECLOGON')     
+
+    Get-Service | Where ([scriptblock]::Create($Value))
+
+    Status   Name               DisplayName                           
+    ------   ----               -----------                           
+    Stopped  BITS               Background Intelligent Transfer Ser...
+    Running  LanmanWorkstation  Workstation                           
+    Stopped  seclogon           Secondary Logon 
+
+.OUTPUTS
+[String] object
+#>
 function New-DynamicSearchFilter
 {
-    <#
-    .Synopsis
-    Dynamic Search Filter Creator for Multiple Arguments
-    .DESCRIPTION
-
-    This function builds a Dynamic Search Filter string for Powershell filters within If Statements or Where statements. Instead of builing multiple ifs within a statement, let Powershell do it for you :)
-    
-    This is usefull in orchestration environments where the string get's created from a different output.
-    .
-    .EXAMPLE
-
-        $Value = New-DynamicSearchFilter -PowershellProperty '$_.Name' -SubComparisonOperator '-match' -ComparisonOperator '-or' -String 'BITS,WORKSTATION,SPOOLER,SECLOGON'
-
-        $Value = ($_.Name -match 'BITS') -or ($_.Name -match 'WORKSTATION') -or ($_.Name -match 'SECLOGON')     
-
-        Get-Service | Where ([scriptblock]::Create($Value))
-
-        Status   Name               DisplayName                           
-        ------   ----               -----------                           
-        Stopped  BITS               Background Intelligent Transfer Ser...
-        Running  LanmanWorkstation  Workstation                           
-        Stopped  seclogon           Secondary Logon 
-
-    .OUTPUTS
-    [String] object
-    #>
     [CmdletBinding(DefaultParameterSetName='Main Set 0', 
                   SupportsShouldProcess=$false, 
                   PositionalBinding=$false,
@@ -1248,53 +1258,4 @@ function New-DynamicSearchFilter
        "($PowershellProperty $SubComparisonOperator $($stringarr[-1]))" 
     }
     return $newstring
-}
-
-function Get-VMWareSerialNumber($UUID)
-{
-    $uuid = $uuid.Replace('-','')
-    $sn = ''
-    for ($i=0;$i -lt $uuid.Length; $i+=2)
-    {
-        $sn += $uuid.Substring($i,2)
-        $sn += ' '
-    }
-    $str1 = $sn.Substring(0,23)
-    $str2 = $sn.Substring(24)
-    $sn = ("VMWARE-$str1-$str2").ToUpper()
-    return $sn
-}
-
-function Get-VmwareVmToolStatus($VC,$UserName,$Password,$serversToSkip)
-{
-    try
-    {
-        Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Scope Session -ProxyPolicy NoProxy -ParticipateInCeip:$false -Confirm:$false -ErrorAction Stop | Out-Null
-        Connect-VIServer $VC -Username $UserName -Password $Password -ErrorAction Stop | Out-Null
-        Write-Verbose "trying $vc" -Verbose
-        $VMObjects = Get-VM -ea Stop
-        $newobj = $VMObjects | ? {(($_.ExtensionData.Summary.Guest.ToolsVersionStatus -match 'guestToolsNeedUpgrade') -or ($_.ExtensionData.Summary.Guest.ToolsVersionStatus -match 'guestToolsNotInstalled'))} |
-                    Select  @{n='HostName';e={$_.Guest.HostName}},
-                    Name,
-                    @{n='UUID';e={$_.ExtensionData.Summary.Config.UUID}},
-                    @{n='SerialNumber';e={Get-VMWareSerialNumber -UUID $_.ExtensionData.Summary.Config.UUID}},
-                    @{n='HardwareVersion';e={$_.Version}},
-                    @{n='ToolsVersion';e={($_ | Get-VMGuest).ToolsVersion}},
-                    @{n='ToolsStatus';e={(SplitText($_.ExtensionData.Guest.ToolsStatus)) -join ' '}},
-                    @{n='ToolsRunningStatus';e={(SplitText($_.ExtensionData.Guest.ToolsRunningStatus)) -join ' '}}
-        Disconnect-VIServer $vc -Confirm:$false -Force | Out-Null
-        if($serversToSkip)
-        {
-            $searchblock = New-DynamicSearchFilter -PowershellProperty '$_.Name' -SubComparisonOperator '-notmatch' -ComparisonOperator '-and' -String $serversToSkip
-            return ($newobj | ? ([scriptblock]::Create($searchblock)))
-        }
-        else
-        {
-            return $newobj
-        }
-    }
-    catch
-    {
-        Write-Verbose "failed to connect to $vc" -Verbose
-    }
 }
