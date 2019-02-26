@@ -1,9 +1,545 @@
-function SplitText($String)
+﻿function SplitText
 {
+    param
+    (
+        [string]
+        $String
+    )
+    #This is to seperate title cased strings to a sentence. eg. SplitText('WhatTheF***')
     [Regex]::Split($String,("(?<!^)(?=[A-Z])"))
 }
 
-function Get-AzureAvailableResources()
+function Get-RandomPassword
+{
+    param
+    ([int]$Length=10)
+    $letters = 'abcdefghijklmnopqrstuvwxyz'
+    $cletters = $letters.ToUpper().ToCharArray()
+    $numbers = 1,2,3,4,5,6,7,8,9,0
+    $specialchars = '!@#$%&*()+'.ToCharArray()
+    $string = ''
+    $string += $specialchars | Get-Random -Count 2
+    $string += $numbers | Get-Random -Count 2
+    $string += $cletters | Get-Random -Count 2
+    $string += $letters.ToCharArray() | Get-Random -Count ($Length - 6)
+    $pass = ($string.ToCharArray() | Get-Random -Count $string.Length) -join ''
+    return $pass.Replace(' ','')
+}
+
+function New-TempHpsaOpenPortScript
+{
+    do
+    {
+        $randomval = "$env:windir\temp\$((Get-Random).ToString()).ps1"
+    }
+    until (!(Test-Path $randomval))
+    $script = 
+@'
+Get-NetFirewallRule -DisplayGroup 'File and Printer Sharing' | Where {($_.Direction -eq 'Inbound') -and ($_.DisplayName -match 'SMB-In')} | Enable-NetFirewallRule 
+'@
+    $script | Out-File -FilePath $randomval -Force
+    return $randomval
+}
+
+function Add-AzureRmVmAntimalware
+{
+    [CmdletBinding(DefaultParameterSetName='Parameter Set 1', 
+                  SupportsShouldProcess=$false, 
+                  PositionalBinding=$false,
+                  HelpUri = 'http://www.t-systems.co.za/',
+                  ConfirmImpact='Low')]
+    [OutputType([String])]
+    Param(
+        #Azure Credentials
+        [Parameter(Mandatory=$false, 
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=0,
+            ParameterSetName='Parameter Set 1')]
+        [pscredential]
+        $Credential, 
+        #Azure SubscriptionId
+        [Parameter(Mandatory=$false, 
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=1,
+            ParameterSetName='Parameter Set 1')]
+        [ValidateScript({[guid]::parse($_)})]
+        [guid]
+        $SubscriptionId,
+        #Azure VM Name 
+        [Parameter(Mandatory=$true, 
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=2,
+            ParameterSetName='Parameter Set 1')]
+        [string]
+        $VmName,
+        #Azure Resource Group
+        [Parameter(Mandatory=$true, 
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=3,
+            ParameterSetName='Parameter Set 1')]
+        [string]
+        $ResourceGroupName
+    )
+
+    if($psBoundParameters['verbose'])
+    {
+        $VerbosePreference = "Continue"
+    }
+    if (!(Get-AzureRmContext))
+    {
+        try
+        {
+            Connect-AzureRmAccount -Credential $Credential -Subscription $Subscriptionid -Scope Process -ErrorAction Stop
+            $FunctionLogin = $true
+        }
+        catch
+        {
+            Write-Error 'No Azure RM Context found. Run Connect-AzureRMAccount before running this command or provide valid values for Credential and SubscriptionId parameters' -RecommendedAction 'Please authenticate via Connect-AzureRMAccount'
+            return
+        }
+    }
+    try
+    {
+        Write-Verbose "Looking for VM $VMName in $ResourceGroupName.."
+        $Location = Get-AzureRmVM -ResourceGroupName $ResourceGroupName -Name $VMName -ErrorAction Stop
+        Write-Verbose "Found VM $VMName in $ResourceGroupName..."
+        $AV = Get-AzureRmVMExtensionImage `
+                                -Location $Location.Location `
+                                -PublisherName 'Microsoft.Azure.Security' `
+                                -Type IaaSAntimalware `
+                                -ErrorAction Stop | 
+                                    Sort-Object -Property Version -Descending | 
+                                        Select -First 1
+        <# Getting major type number in below line as Set-AzureRMVMExtension does not support minor version numbers. #>
+        $avversion = $av.Version.Substring(0,$av.Version.Substring(0,($av.Version.LastIndexOfAny('.'))).LastIndexOfAny('.'))
+        $job = Set-AzureRmVMExtension `
+            -VMName $VMName `
+            -ResourceGroupName $ResourceGroupName `
+            -ExtensionType $av.Type `
+            -Publisher $av.PublisherName `
+            -Location $av.Location `
+            -Name $AV.Type `
+            -Settings @{"AntimalwareEnabled" = "true"} `
+            -TypeHandlerVersion $avversion `
+            -ErrorAction Stop -AsJob
+        Wait-Job -Job $job -Timeout 3600
+        Receive-Job -Job $job | Out-Null
+        if ($FunctionLogin)
+        {
+            Disconnect-AzureRmAccount -Scope Process | Out-Null
+        }
+        Write-Verbose "Antimalware on $VmName enabled successfully."
+    }
+    catch
+    {
+        if ($FunctionLogin)
+        {
+            Disconnect-AzureRmAccount -Scope Process | Out-Null
+        }
+        throw $Error[0]
+    }
+}
+
+function Add-AzureRMVMUpdateManagementConfig
+{
+    [CmdletBinding(DefaultParameterSetName='Parameter Set 1', 
+                  SupportsShouldProcess=$false, 
+                  PositionalBinding=$false,
+                  HelpUri = 'http://www.t-systems.co.za/',
+                  ConfirmImpact='Low')]
+    [OutputType([String])]
+    Param(
+        #Azure Credentials
+        [Parameter(Mandatory=$false, 
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=0,
+            ParameterSetName='Parameter Set 1')]
+        [pscredential]
+        $Credential, 
+        #Azure SubscriptionId
+        [Parameter(Mandatory=$false, 
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=1,
+            ParameterSetName='Parameter Set 1')]
+        [ValidateScript({[guid]::parse($_)})]
+        [guid]
+        $SubscriptionId,
+        #Azure VM Name 
+        [Parameter(Mandatory=$true, 
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=2,
+            ParameterSetName='Parameter Set 1')]
+        [string]
+        $VmName,
+        #Azure Resource Group
+        [Parameter(Mandatory=$true, 
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=3,
+            ParameterSetName='Parameter Set 1')]
+        [string]
+        $ResouceGroupName,
+        #Azure Workspace name (Needs to be deployed via Update Solution)
+        [Parameter(Mandatory=$true, 
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=4,
+            ParameterSetName='Parameter Set 1')]
+        [string]
+        $WorkSpaceName,
+        #Azure Automation Account Name (Needs to be deployed via Update Solution)
+        [Parameter(Mandatory=$true, 
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=5,
+            ParameterSetName='Parameter Set 1')]
+        [string]
+        $AutomationAccountName
+    )
+    if($psBoundParameters['verbose'])
+    {
+        $VerbosePreference = "Continue"
+    }
+    if (!(Get-AzureRmContext))
+    {
+        try
+        {
+            Connect-AzureRmAccount -Credential $Credential -Subscription $Subscriptionid -Scope Process -ErrorAction Stop
+            $FunctionLogin = $true
+        }
+        catch
+        {
+            Write-Error 'No Azure RM Context found. Run Connect-AzureRMAccount before running this command or provide valid values for Credential and SubscriptionId parameters' -RecommendedAction 'Please authenticate via Connect-AzureRMAccount'
+            return
+        }
+    }
+    try
+    {
+        $AutomationAcc = Get-AzureRMAutomationAccount -ResourceGroupName $ResouceGroupName -Name $AutomationAccountName -ErrorAction Stop
+        $AutomationResId = Get-AzureRmResource -ResourceType 'Microsoft.Automation/automationAccounts' -Name $AutomationAcc.AutomationAccountName -ErrorAction Stop
+        $WorkSpaceInfo = Get-AzureRmOperationalInsightsWorkspace -ResourceGroupName $ResouceGroupName -Name $WorkSpaceName -ErrorAction Stop
+        $VM = Get-AzureRmVM -ResourceGroupName $ResouceGroupName -Name $VmName -ErrorAction Stop
+    }
+    catch
+    {
+        if ($FunctionLogin)
+        {
+            Disconnect-AzureRmAccount -Scope Process | Out-Null
+        }
+        throw $Error[0]
+        return
+    }
+    $Diagnostics = Get-AzureRmDiagnosticSetting -ResourceId $AutomationResId.ResourceId -ErrorAction Stop
+    if (-not $Diagnostics.WorkspaceId -eq $WorkSpaceInfo.ResourceId)
+    {
+        if ($FunctionLogin)
+        {
+            Disconnect-AzureRmAccount -Scope Process | Out-Null
+        }
+        Write-Error -Message 'Correlation between Automation Account and Workspace not found. Please deploy Update Management solution via Azure portal.'
+        return
+    }
+    else
+    {
+        Write-Verbose -Message "Correlation between '$AutomationAccountName' and '$WorkSpaceName' found."
+    }
+    $MMAExentsionName = "MicrosoftMonitoringAgent"
+    $MMATemplateLinkUri = "https://wcusonboardingtemplate.blob.core.windows.net/onboardingtemplate/ArmTemplate/createMmaWindowsV3.json"
+    $MMADeploymentParams = 
+    @{
+        "vmName" = $vm.Name.ToString()
+        "vmLocation" = $VM.Location.ToString()
+        "vmResourceId" = $VM.Id.ToString()
+        "vmIdentityRequired" = $false
+        "workspaceName" = $WorkSpaceInfo.Name.ToString()
+        "workspaceId" = $WorkSpaceInfo.CustomerId.Guid.ToString()
+        "workspaceResourceId" = $WorkSpaceInfo.ResourceId.ToString()
+        "mmaExtensionName" = $MMAExentsionName
+    }
+    $DeploymentName = "AutomationControl-PS-" + (Get-Date).ToFileTimeUtc()
+    try
+    {
+        New-AzureRmResourceGroupDeployment -ResourceGroupName $ResouceGroupName -TemplateUri $MMATemplateLinkUri -Name $DeploymentName -TemplateParameterObject $MMADeploymentParams -ApiVersion 2015-06-15 -Force | Out-Null
+        if ($FunctionLogin)
+        {
+            Disconnect-AzureRmAccount -Scope Process | Out-Null
+        }
+        Write-Verbose "Azure Update Management enabled sucessfully on $VmName"
+        return
+    }
+    catch
+    {
+        if ($FunctionLogin)
+        {
+            Disconnect-AzureRmAccount -Scope Process | Out-Null
+        }
+        throw $Error[0]
+        return
+    }
+}
+
+function Enable-AzureRmVmBackup
+{
+    [CmdletBinding(DefaultParameterSetName='Parameter Set 1', 
+                  SupportsShouldProcess=$false, 
+                  PositionalBinding=$false,
+                  HelpUri = 'http://www.t-systems.co.za/',
+                  ConfirmImpact='Low')]
+    [OutputType([String])]
+    Param
+    (
+        #Azure Credentials
+        [Parameter(Mandatory=$false, 
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=0,
+            ParameterSetName='Parameter Set 1')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [pscredential]
+        $Credential,
+    
+        #Azure RM Subscription
+        [Parameter(Mandatory=$false, 
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=1,
+            ParameterSetName='Parameter Set 1')]
+        [ValidateScript({[guid]::parse($_)})]
+        [guid]
+        $SubscriptionId,
+    
+        # Azure RM Resource Group Name
+        [Parameter(Mandatory=$true, 
+            ValueFromPipeline=$false,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=2,
+            ParameterSetName='Parameter Set 1')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $ResourceGroup,
+    
+        # Vm Hostname
+        [Parameter(Mandatory=$true, 
+                   ValueFromPipeline=$false,
+                   ValueFromPipelineByPropertyName=$true, 
+                   ValueFromRemainingArguments=$false, 
+                   Position=3,
+                   ParameterSetName='Parameter Set 1')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $VMName,
+
+        # Vm Hostname
+        [Parameter(Mandatory=$true, 
+                   ValueFromPipeline=$false,
+                   ValueFromPipelineByPropertyName=$true, 
+                   ValueFromRemainingArguments=$false, 
+                   Position=4,
+                   ParameterSetName='Parameter Set 1')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $VaultID,
+
+        # Vm Hostname
+        [Parameter(Mandatory=$true, 
+                   ValueFromPipeline=$false,
+                   ValueFromPipelineByPropertyName=$true, 
+                   ValueFromRemainingArguments=$false, 
+                   Position=5,
+                   ParameterSetName='Parameter Set 1')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $PolicyName
+    )
+    if($psBoundParameters['verbose'])
+    {
+        $VerbosePreference = "Continue"
+    }
+    if (!(Get-AzureRmContext))
+    {
+        try
+        {
+            Connect-AzureRmAccount -Credential $Credential -Subscription $Subscriptionid -Scope Process -ErrorAction Stop
+            $FunctionLogin = $true
+        }
+        catch
+        {
+            Write-Error 'No Azure RM Context found. Run Connect-AzureRMAccount before running this command or provide valid values for Credential and SubscriptionId parameters' -RecommendedAction 'Please authenticate via Connect-AzureRMAccount'
+            return
+        }
+    }
+    try
+    {
+        $Policy = Get-AzureRmRecoveryServicesBackupProtectionPolicy -Name $PolicyName -VaultId $VaultID -ErrorAction Stop
+        Enable-AzureRmRecoveryServicesBackupProtection -Name $VMName -Policy $Policy -ResourceGroupName $ResourceGroup -VaultId $VaultID -ErrorAction Stop
+        if ($FunctionLogin)
+        {
+            Disconnect-AzureRmAccount -Scope Process | Out-Null
+        }
+        Write-Verbose "Backups on `"$VMName`" enabled sucessfully. Policy: $PolicyName"
+    }
+    catch
+    {
+        if ($FunctionLogin)
+        {
+            Disconnect-AzureRmAccount -Scope Process | Out-Null
+        }
+        throw $Error[0]
+        return
+    }
+}
+
+function Disable-AzureRmVmBackup
+{
+    [CmdletBinding(DefaultParameterSetName='Parameter Set 1', 
+                  SupportsShouldProcess=$false, 
+                  PositionalBinding=$false,
+                  HelpUri = 'http://www.t-systems.co.za/',
+                  ConfirmImpact='Low')]
+    [OutputType([String])]
+    Param
+    (
+        #Azure Credentials
+        [Parameter(Mandatory=$false, 
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=0,
+            ParameterSetName='Parameter Set 1')]
+        [pscredential]
+        $Credential,
+
+        #Azure SubscriptionId
+        [Parameter(Mandatory=$false, 
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=1,
+            ParameterSetName='Parameter Set 1')]
+        [ValidateScript({[guid]::parse($_)})]
+        [guid]
+        $SubscriptionId,
+    
+        # Azure RM Resource Group Name
+        [Parameter(Mandatory=$true, 
+            ValueFromPipeline=$false,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=2,
+            ParameterSetName='Parameter Set 1')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $ResourceGroup,
+    
+        # Vm Hostname
+        [Parameter(Mandatory=$true, 
+                   ValueFromPipeline=$false,
+                   ValueFromPipelineByPropertyName=$true, 
+                   ValueFromRemainingArguments=$false, 
+                   Position=3,
+                   ParameterSetName='Parameter Set 1')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $VMName,
+
+        # Vm Hostname
+        [Parameter(Mandatory=$true, 
+                   ValueFromPipeline=$false,
+                   ValueFromPipelineByPropertyName=$true, 
+                   ValueFromRemainingArguments=$false, 
+                   Position=4,
+                   ParameterSetName='Parameter Set 1')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $VaultID,
+        # Vm Hostname
+        [Parameter(Mandatory=$false, 
+                   ValueFromPipeline=$false,
+                   ValueFromPipelineByPropertyName=$true, 
+                   ValueFromRemainingArguments=$false, 
+                   Position=5,
+                   ParameterSetName='Parameter Set 1')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $RemoveRecoveryPoints = 'false'
+    )
+    if($psBoundParameters['verbose'])
+    {
+        $VerbosePreference = "Continue"
+    }
+    if (!(Get-AzureRmContext))
+    {
+        try
+        {
+            Connect-AzureRmAccount -Credential $Credential -Subscription $Subscriptionid -Scope Process -ErrorAction Stop
+            $FunctionLogin = $true
+        }
+        catch
+        {
+            Write-Error 'No Azure RM Context found. Run Connect-AzureRMAccount before running this command or provide valid values for Credential and SubscriptionId parameters' -RecommendedAction 'Please authenticate via Connect-AzureRMAccount'
+            return
+        }
+    }
+    try
+    {
+        $container = Get-AzureRmRecoveryServicesBackupContainer -ContainerType AzureVM -FriendlyName $VMName -VaultId $VaultID -ErrorAction Stop
+        $item = Get-AzureRmRecoveryServicesBackupItem -Container $container -Name $VMName -VaultId $VaultID -WorkloadType AzureVM -ErrorAction Stop
+        if ($RemoveRecoveryPoints = 'true')
+        {
+            Disable-AzureRmRecoveryServicesBackupProtection -Item $item -RemoveRecoveryPoints -Force -VaultId $VaultID -ErrorAction Stop | Out-Null
+            Write-verbose "Backups for `"$VMName`" disabled sucessfully. Recovery Points removed."
+        }
+        else
+        {
+            Disable-AzureRmRecoveryServicesBackupProtection -Item $item -Force -VaultId $VaultID -ErrorAction Stop | Out-Null
+            Write-verbose "Backups for `"$VMName`" disabled sucessfully."
+        }
+        if ($FunctionLogin)
+        {
+            Disconnect-AzureRmAccount -Scope Process | Out-Null
+        }
+    }
+    catch
+    {
+        if ($FunctionLogin)
+        {
+            Disconnect-AzureRmAccount -Scope Process | Out-Null
+        }
+        throw $Error[0]
+        return
+    }
+}
+
+function Get-AzureAvailableResources
 {
     param(
         [Parameter(Mandatory=$true, 
@@ -21,12 +557,11 @@ function Get-AzureAvailableResources()
     #Script begins here...
 
     #Logging in
-    Login-AzureRmAccount -Credential $Credential -ErrorAction Stop -Verbose | Out-Null
+    Login-AzureRmAccount -Credential $Credential -ErrorAction Stop -Scope Process -Verbose | Out-Null
 
     #Select Subscription
     $Subscription = Get-AzureRmSubscription -ErrorAction Stop -Verbose
-    Select-AzureRmSubscription -SubscriptionObject ($Subscription | Select -Last 1) -Verbose | Out-Null
-
+    Select-AzureRmSubscription -SubscriptionObject $Subscription[0] -Scope Process -Verbose | Out-Null
     #Build Locations/VmSizes/VMSizes Properties JSON file
     $AzureRMLocations = Get-AzureRmLocation -ErrorAction SilentlyContinue -Verbose
     $VMSizes = Get-AzureRmComputeResourceSku -ErrorAction SilentlyContinue -Verbose | Where {$_.ResourceType -eq 'virtualMachines'}
@@ -107,12 +642,12 @@ function Get-AzureAvailableResources()
                         }
             }
     }
-    Disconnect-AzureRmAccount -Verbose | Out-Null
+    Logout-AzureRmAccount -Verbose -Scope Process | Out-Null
     $json = @{"Locations" = $CustomObject} | ConvertTo-Json -Depth 100 -Verbose
     return $json
 }
 
-function Get-AzureClientResources()
+function Get-AzureClientResources
 {
     param(
     [Parameter(Mandatory=$true, 
@@ -129,13 +664,13 @@ function Get-AzureClientResources()
     )
 
     #Logging in
-    Login-AzureRmAccount -Credential $Credential -ErrorAction Stop -Force -verbose | Out-Null
+    Login-AzureRmAccount -Credential $Credential -ErrorAction Stop -Force -verbose -Scope Process | Out-Null
     #Get Tenants
     $Tenant = Get-AzureRmTenant -verbose
     #Tennant Array
     $TennantArray = @()
     Foreach($t in $Tenant)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            {
+    {
     #Tenant details
     Connect-AzureAD -Credential $Credential -TenantId $t.Id -verbose | Out-Null
     $TenantDetails = Get-AzureADTenantDetail
@@ -147,7 +682,7 @@ function Get-AzureClientResources()
     Foreach($s in $Subscription)
     {
         #Select Subscription
-        Select-AzureRmSubscription -SubscriptionObject $S -verbose | Out-Null
+        Select-AzureRmSubscription -SubscriptionObject $S -verbose -Scope Process | Out-Null
 
         #Get Locations
         $Locations = Get-AzureRmLocation -verbose
@@ -228,6 +763,23 @@ function Get-AzureClientResources()
                                                                 Tags = foreach ($ta in $_.Tags.Keys){[ordered]@{name=$ta;Value=$_.Tags[$ta]}}
                                                             }
                                                         }
+
+                #Log Analytics Workspace
+                $LogAnalyticsWorkspace = @()
+                $LogAnalyticsWorkspace += Get-AzureRmOperationalInsightsWorkspace `
+                                                        -ResourceGroupName $ResourceGroup.ResourceGroupName -verbose |
+                                                        %{
+                                                             [ordered]@{
+                                                                name = $_.Name
+                                                                id = $_.ResourceId
+                                                                Location = $_.Location
+                                                                Tags = foreach ($ta in $_.Tags.Keys){[ordered]@{name=$ta;Value=$_.Tags[$ta]}}
+                                                                Sku = $_.Sku
+                                                                CustomerID = $_.CustomerId
+                                                                PortalUrl = $_.PortalUrl
+                                                            }
+                                                        }
+                
                 #Virtual Machines
                 $VMs = @()
                 $VMs += Get-AzureRmVM `
@@ -250,6 +802,7 @@ function Get-AzureClientResources()
                                     Tags = foreach ($ta in $_.Tags.Keys){[ordered]@{name=$ta;Value=$_.Tags[$ta]}}
                                 }
                             }
+
                 #Recovery Services Vault
                 $RecoveryServicesVault = @()
                 $RecoveryServicesVault += Get-AzureRmRecoveryServicesVault `
@@ -260,6 +813,29 @@ function Get-AzureClientResources()
                                                                         id = $_.ID
                                                                         Location = $_.Location
                                                                         ResourceGroupName = $_.ResourceGroupName
+                                                                        BackupPolicyDetails = Get-AzureRmRecoveryServicesBackupProtectionPolicy -VaultId $_.Id | 
+                                                                            %{
+                                                                                [ordered]@{
+                                                                                    name = $_.Name
+                                                                                    id = $_.Name
+                                                                                    ScheduleRunDays = $_.SchedulePolicy.ScheduleRunDays | %{$_}
+                                                                                    ScheduleRunTimes = $_.SchedulePolicy.ScheduleRunTimes | %{if($_){"$($_.ToString()) UTC"}}
+                                                                                    ScheduleRunFrequency = $_.SchedulePolicy.ScheduleRunFrequency
+                                                                                    IsDailyScheduleEnabled = $_.RetentionPolicy.IsDailyScheduleEnabled
+                                                                                    IsWeeklyScheduleEnabled = $_.RetentionPolicy.IsWeeklyScheduleEnabled
+                                                                                    IsMonthlyScheduleEnabled = $_.RetentionPolicy.IsMonthlyScheduleEnabled
+                                                                                    IsYearlyScheduleEnabled = $_.RetentionPolicy.IsYearlyScheduleEnabled
+                                                                                    DailyScheduleDurationCountInDays = $_.RetentionPolicy.DailySchedule.DurationCountInDays
+                                                                                    DailyScheduleRetentionTimes = $_.RetentionPolicy.DailySchedule.RetentionTimes | %{if($_){"$($_.ToString()) UTC"}}
+                                                                                    WeeklyScheduleDurationCountInDays = $_.RetentionPolicy.WeeklySchedule.DurationCountInDays
+                                                                                    WeeklyScheduleRetentionTimes = $_.RetentionPolicy.WeeklySchedule.RetentionTimes  | %{if($_){"$($_.ToString()) UTC"}}
+                                                                                    MonthlyScheduleDurationCountInDays = $_.RetentionPolicy.MonthlySchedule.DurationCountInDays
+                                                                                    MonthlyScheduleRetentionTimess = $_.RetentionPolicy.MonthlySchedule.RetentionTimess  | %{if($_){"$($_.ToString()) UTC"}}
+                                                                                    YearlyScheduleDurationCountInDays = $_.RetentionPolicy.YearlySchedule.DurationCountInDays
+                                                                                    YearlyScheduleRetentionTimes = $_.RetentionPolicy.YearlySchedule.RetentionTimes  | %{if($_){"$($_.ToString()) UTC"}}
+                                                                                    WorkloadType = $_.WorkloadType
+                                                                                }
+                                                                            }
                                                                     }
                                                                 }
                 #Disks
@@ -280,7 +856,7 @@ function Get-AzureClientResources()
                 #Network Interfaces
                 $NetworkInterfaces = @()
                 $NetworkInterfaces += Get-AzureRmNetworkInterface `
-                                                        -ResourceGroupName $ResourceGroup.ResourceGroupName -verbose | Where {$_.VirtualMachine -eq $null}|
+                                                        -ResourceGroupName $ResourceGroup.ResourceGroupName | Where {$_.VirtualMachine -eq $null}|
                                                         %{
                                                             [ordered]@{
                                                                 name = $_.Name
@@ -293,7 +869,7 @@ function Get-AzureClientResources()
                 #Public IPs
                 $PublicIPs = @()
                 $PublicIPs += Get-AzureRmPublicIpAddress `
-                                                -ResourceGroupName $ResourceGroup.ResourceGroupName -verbose | Where {$_.IpConfiguration -eq $null} |
+                                                -ResourceGroupName $ResourceGroup.ResourceGroupName | Where {$_.IpConfiguration -eq $null} |
                                                 %{
                                                     [ordered]@{
                                                         name = $_.Name
@@ -308,7 +884,7 @@ function Get-AzureClientResources()
                 #Network Security Groups
                 $NSGS = @()
                 $NSGS += Get-AzureRmNetworkSecurityGroup `
-                                                -ResourceGroupName $ResourceGroup.ResourceGroupName -verbose |
+                                                -ResourceGroupName $ResourceGroup.ResourceGroupName |
                                                 %{
                                                     [ordered]@{
                                                         name = $_.Name
@@ -373,7 +949,7 @@ function Get-AzureClientResources()
                         Subscriptions = $SubscriptionArray
                     }
     }#End Tenant
-    #Disconnect-AzureRmAccount -verbose | Out-Null
+    Disconnect-AzureRmAccount -verbose -Scope Process | Out-Null
     $Tenants = @{
                     Tenants = $TennantArray
             }
@@ -381,22 +957,339 @@ function Get-AzureClientResources()
     Return $data
 }
 
-function Get-RandomPassword([int]$Length=10)
+function Delete-AzureRMVMFull
 {
-    $letters = 'abcdefghijklmnopqrstuvwxyz'
-    $cletters = $letters.ToUpper().ToCharArray()
-    $numbers = 1,2,3,4,5,6,7,8,9,0
-    $specialchars = '!@#$%&*()+'.ToCharArray()
-    $string = ''
-    $string += $specialchars | Get-Random -Count 2
-    $string += $numbers | Get-Random -Count 2
-    $string += $cletters | Get-Random -Count 2
-    $string += $letters.ToCharArray() | Get-Random -Count ($Length - 6)
-    $pass = ($string.ToCharArray() | Get-Random -Count $string.Length) -join ''
-    return $pass.Replace(' ','')
+    [CmdletBinding(DefaultParameterSetName='Parameter Set 1', 
+                  SupportsShouldProcess=$false, 
+                  PositionalBinding=$false,
+                  HelpUri = 'http://www.t-systems.co.za/',
+                  ConfirmImpact='Low')]
+    [OutputType([String])]
+    Param(
+        #Azure Credentials
+        [Parameter(Mandatory=$false, 
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=0,
+            ParameterSetName='Parameter Set 1')]
+        [pscredential]
+        $Credential, 
+        #Azure SubscriptionId
+        [Parameter(Mandatory=$false, 
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=1,
+            ParameterSetName='Parameter Set 1')]
+        [ValidateScript({[guid]::parse($_)})]
+        [guid]
+        $SubscriptionId,
+        #Azure VM Name 
+        [Parameter(Mandatory=$true, 
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=2,
+            ParameterSetName='Parameter Set 1')]
+        [string]
+        $VmName,
+        #Azure Resource Group
+        [Parameter(Mandatory=$true, 
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true, 
+            ValueFromRemainingArguments=$false, 
+            Position=3,
+            ParameterSetName='Parameter Set 1')]
+        [string]
+        $ResourceGroupName
+    )
+    if($psBoundParameters['verbose'])
+    {
+        $VerbosePreference = "Continue"
+    }
+    #region Login
+    if (!(Get-AzureRmContext))
+    {
+        try
+        {
+            Connect-AzureRmAccount -Credential $Credential -Subscription $Subscriptionid -Scope Process -ErrorAction Stop
+            $FunctionLogin = $true
+        }
+        catch
+        {
+            Write-Error 'No Azure RM Context found. Run Connect-AzureRMAccount before running this command or provide valid values for Credential and SubscriptionId parameters' -RecommendedAction 'Please authenticate via Connect-AzureRMAccount'
+            return
+        }
+    }
+#endregion
+    #region Get VM Resources
+    try
+    {
+        $VM = Get-AzureRmVM -ResourceGroupName $ResourceGroupName -Name $VMName -ErrorAction Stop
+        $Nic = Get-AzureRmResource -ResourceId $Vm.NetworkProfile.NetworkInterfaces.Id -ExpandProperties -ErrorAction Stop
+    }
+    catch
+    {
+        <#if ($FunctionLogin)
+        {
+            Disconnect-AzureRmAccount -Scope Process | Out-Null
+        }#>
+        throw $Error[0]
+        return
+    }
+    try
+    {
+        $PublicIP = Get-AzureRMResource -ResourceId $nic.Properties.ipConfigurations.properties.publicIPAddress.id -ExpandProperties -ErrorAction Stop
+    }
+    catch
+    {
+        $PublicIP = $null
+    }
+#endregion
+    #region Create Return Object
+    [PSObject]$hash = 
+    [ordered]@{
+        SubscriptionIdcriptionId = $SubscriptionId
+        ResourceGroupName = $ResourceGroupName
+        Location = $vm.Location
+        VmName = $vm.Name
+        NicName = $Nic.Name
+        PublicIpName = $PublicIP.Name
+        OsDiskName = $VM.StorageProfile.OsDisk.Name
+        VmStatus = $vm.StatusCode
+        OsDiskStatus = $null
+        NicStatus = $null
+        DataDisks = @()
+        PublicIpStatus = $null
+        BackupItemName = $null
+        BackupItemStatus = $null
+        BootDiagnosticsContainerName = $null
+        BootDiagnosticsContainerStatus = $null
+    }
+#endregion
+    #region Stop and Deallocate the VM
+    try
+    {
+        Stop-AzureRmVM -ResourceGroupName $ResourceGroupName -Name $VM.Name -Force -ErrorAction Stop | Out-Null
+        $hash.VMStatus = 'Stopped and Deallocated'
+    }
+    catch
+    {
+        $hash.VMStatus = 'Failed to Stop & Deallocate'
+        <#if ($FunctionLogin)
+        {
+            Disconnect-AzureRmAccount -Scope Process | Out-Null
+        }#>
+        throw $Error[0]
+        return ($hash | ConvertTo-Json)
+        return
+    }
+#endregion
+    #region Delete the VM
+    try
+    {
+        Remove-AzureRmVM -Name $VM.Name -ResourceGroupName $ResourceGroupName -Force -ErrorAction Stop | Out-Null
+        $hash.VMStatus = 'Deleted'  
+    }
+    catch
+    {
+        $hash.VMStatus = "Failed to Delete"
+        <#if ($FunctionLogin)
+        {
+            Disconnect-AzureRmAccount -Scope Process | Out-Null
+        }#>
+        throw $Error[0]
+        return ($hash | ConvertTo-Json)
+        return
+    }
+#endregion
+    #region Remove Storage
+    if($vm.StorageProfile.OsDisk.Vhd.Uri -ne $null) #The check for unmanaged disks
+    {
+        #Unmanaged Disks
+        $StorageAccName = $vm.StorageProfile.OsDisk.Vhd.Uri.Replace('https://','').Split('.')[0]
+        $OSDiskName = $vm.StorageProfile.OsDisk.Vhd.Uri.Split('/')[-1]
+        $StorageAcc = Get-AzureRmStorageAccount -Name $StorageAccName -ResourceGroupName $ResourceGroupName
+        $Container = ($vm.StorageProfile.OsDisk.Vhd.Uri.Replace($StorageAcc.PrimaryEndpoints.Blob,'')).Replace($OSDiskName,'').TrimEnd('/')
+        try
+        {
+            Get-AzureStorageBlob -Context $StorageAcc.Context -Blob $OSDiskName -Container $Container | Remove-AzureStorageBlob -Force -ErrorAction Stop | Out-Null
+            $hash.OsDiskStatus = 'Deleted'
+        }
+        catch
+        {
+            $hash.OsDiskStatus = 'Failed to Delete'
+        }
+    }
+    else
+    {
+        #Managed Disks
+        try
+        {
+            Remove-AzureRmDisk -ResourceGroupName $ResourceGroupName -DiskName $vm.StorageProfile.OsDisk.Name -Force -ErrorAction Stop | Out-Null
+            $hash.OsDiskStatus = 'Deleted'
+
+        }
+        catch
+        {
+            $hash.OsDiskStatus = 'Failed to Delete'
+        }
+    }
+    if($vm.StorageProfile.DataDisks -ne $null)
+    {
+        foreach($disk in $vm.StorageProfile.DataDisks)
+        {    
+            if($disk.Vhd.Uri -ne $null)
+            {
+                #Unmanaged Disks
+                $StorageAccName = $disk.Vhd.Uri.Replace('https://','').Split('.')[0]
+                $StorageAcc = Get-AzureRmStorageAccount -Name $StorageAccName -ResourceGroupName $ResourceGroupName
+                $DiskName = $disk.Vhd.Uri.Split('/')[-1]
+                $Container = $disk.Vhd.Uri.Replace($StorageAcc.PrimaryEndpoints.Blob,'').Replace($DiskName,'').TrimEnd('/')
+                try
+                {
+                    Get-AzureStorageBlob -Context $StorageAcc.Context.Context -Blob $DiskName -Container $Container -DefaultProfile $StorageAcc.Context | Remove-AzureStorageBlob -Force -ErrorAction Stop | Out-Null
+                    $hash.DataDisks += 
+                        @{
+                            Name = $disk.Name
+                            DiskStatus = 'Deleted'
+                        }
+                }
+                catch
+                {
+                    $hash.DataDisks += 
+                        @{
+                            Name = $disk.Name
+                            DiskStatus = 'Failed to Delete'
+                        }
+                }
+            }
+            else
+            {
+                #Managed Disks
+                try
+                {
+                    Remove-AzureRmDisk -ResourceGroupName $ResourceGroupName -DiskName $disk.Name -Force -ErrorAction Stop | Out-Null
+                    $hash.DataDisks += 
+                        @{
+                            Name = $disk.Name
+                            DiskStatus = 'Deleted'
+                        }
+                }
+                catch
+                {
+                    $hash.DataDisks += 
+                        @{
+                            Name = $disk.Name
+                            DiskStatus = 'Failed to Delete'
+                        }            
+                }
+            }    
+        }
+    }
+#endregion
+    #region Remove NICs
+    try
+    {
+        Remove-AzureRmResource -ResourceId $nic.Id -Force -ErrorAction Stop | Out-Null
+        $hash.NicStatus = 'Deleted'
+    }
+    catch
+    {
+        $hash.NicStatus = "Failed to Delete"
+    }
+    #endregion
+    #region Remove Public IPs
+    if($PublicIP -ne $null)
+    {
+        try
+        {
+            Remove-AzureRmResource -ResourceId $PublicIP.Id -Force -ErrorAction Stop | Out-Null
+            $hash.PublicIpStatus = "Deleted"
+        }
+        catch
+        {
+            $hash.PublicIpStatus = "Failed to Delete"
+        }
+    }
+    else
+    {
+        $hash.PublicIpStatus = "N/A"
+    }
+#endregion
+    #region Disable Backups
+    $vaults = Get-AzureRmRecoveryServicesVault -ResourceGroupName $ResourceGroupName
+    if($vaults -ne $null)
+    {
+        foreach ($v in $vaults)
+        {
+            Set-AzureRmRecoveryServicesVaultContext -Vault $v | Out-Null
+            $Vms = Get-AzureRmRecoveryServicesBackupContainer -ContainerType AzureVM
+            if($Vms -ne $null)
+            {
+                foreach($vmBackup in $Vms)
+                {
+                    if($vmBackup.FriendlyName -match $VMName)
+                    {
+                        $backupitem = Get-AzureRmRecoveryServicesBackupItem -Container $vmBackup -WorkloadType AzureVM
+                        try
+                        {
+                            Disable-AzureRmRecoveryServicesBackupProtection -Item $backupitem -Force -ErrorAction Stop | Out-Null
+                            $hash.BackupItemName = $vmBackup.FriendlyName
+                            $hash.BackupItemStatus = 'Disabled'
+                        }
+                        catch
+                        {
+                            $hash.BackupItemName = $vmBackup.FriendlyName
+                            $hash.BackupItemStatus = 'Failed to Disable'
+                        }
+                    }
+                }
+            }
+        }
+    }
+#endregion
+    #region Remove from Automation Accounts(Patching and other System Groups)
+    $AutomationAccounts = Get-AzureRmAutomationAccount -ResourceGroupName $ResourceGroupName
+    foreach ($Account in $AutomationAccounts)
+    {
+        $Workers = $Account | Get-AzureRmAutomationHybridWorkerGroup
+        foreach ($worker in $Workers)
+        {
+            if (($worker.GroupType -eq 'System') -and ($worker.RunbookWorker.name -match $VmName))
+            {
+                $worker | Remove-AzureRmAutomationHybridWorkerGroup
+            }
+        }
+    }
+#endregion
+    #region Remove Boot Diagnostics
+    if($vm.DiagnosticsProfile.bootDiagnostics.storageUri -ne $null)
+    {
+        try
+        {
+            $StorageAccName = $vm.DiagnosticsProfile.bootDiagnostics.storageUri.Replace('https://','').Split('.')[0]
+            $StorageAcc = Get-AzureRmStorageAccount -Name $StorageAccName -ResourceGroupName $ResourceGroupName -ErrorAction Stop
+            $ContainerName = Get-AzureStorageContainer -Name "bootdiagnostics-$($vmname.ToLower())-*" -Context $StorageAcc.Context.Context -ErrorAction Stop
+            Remove-AzureStorageContainer -Name $ContainerName.Name -Force -PassThru -Context $StorageAcc.Context.Context -ErrorAction Stop | Out-Null
+            $hash.BootDiagnosticsContainerName = $ContainerName.Name
+            $hash.BootDiagnosticsContainerStatus = "Deleted Sucessfully"
+        }
+        catch
+        {
+            $hash.BootDiagnosticsContainerStatus = "Failed to Delete"
+        }
+    }
+#endregion
+    <#if ($FunctionLogin)
+    {
+        Disconnect-AzureRmAccount -Scope Process | Out-Null
+    }#>
+    return ($hash | ConvertTo-Json -Depth 10)
 }
 
-function New-AzureRMVMFull ()
+function New-AzureRMVMFull
 {
     [CmdletBinding(DefaultParameterSetName='Parameter Set 1', 
                   SupportsShouldProcess=$false, 
@@ -407,27 +1300,24 @@ function New-AzureRMVMFull ()
     Param
     (
         #Azure Credentials
-        [Parameter(Mandatory=$true, 
+        [Parameter(Mandatory=$false, 
             ValueFromPipeline=$true,
             ValueFromPipelineByPropertyName=$true, 
             ValueFromRemainingArguments=$false, 
             Position=0,
             ParameterSetName='Parameter Set 1')]
-        [ValidateNotNull()]
-        [ValidateNotNullOrEmpty()]
         [pscredential]
         $Credential,
 
-        #Azure RM Subscription
-        [Parameter(Mandatory=$true, 
+        #Azure SubscriptionId
+        [Parameter(Mandatory=$false, 
             ValueFromPipeline=$true,
             ValueFromPipelineByPropertyName=$true, 
             ValueFromRemainingArguments=$false, 
             Position=1,
             ParameterSetName='Parameter Set 1')]
-        [ValidateNotNull()]
-        [ValidateNotNullOrEmpty()]
-        [string]
+        [ValidateScript({[guid]::parse($_)})]
+        [guid]
         $SubscriptionId,
 
         # Azure RM Location
@@ -680,58 +1570,141 @@ function New-AzureRMVMFull ()
         [ValidateNotNull()]
         [ValidateNotNullOrEmpty()]
         [string]
-        $Disk5 = 'null'
+        $Disk5 = 'null',
+
+        # Turn on Patching
+        [Parameter(Mandatory=$false, 
+                   ValueFromPipeline=$false,
+                   ValueFromPipelineByPropertyName=$true, 
+                   ValueFromRemainingArguments=$false, 
+                   Position=23,
+                   ParameterSetName='Parameter Set 1')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $ConfigureUpdates = $false,
+
+        # Automation Account Name for Patching
+        [Parameter(Mandatory=$false, 
+                   ValueFromPipeline=$false,
+                   ValueFromPipelineByPropertyName=$true, 
+                   ValueFromRemainingArguments=$false, 
+                   Position=24,
+                   ParameterSetName='Parameter Set 1')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $AutomationAccountName = 'null',
+
+        # Workspace Account Name for Patching
+        [Parameter(Mandatory=$false, 
+                   ValueFromPipeline=$false,
+                   ValueFromPipelineByPropertyName=$true, 
+                   ValueFromRemainingArguments=$false, 
+                   Position=25,
+                   ParameterSetName='Parameter Set 1')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $WorkSpaceName = 'null',
+
+        # Turn on Backups
+        [Parameter(Mandatory=$false, 
+                   ValueFromPipeline=$false,
+                   ValueFromPipelineByPropertyName=$true, 
+                   ValueFromRemainingArguments=$false, 
+                   Position=26,
+                   ParameterSetName='Parameter Set 1')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $ConfigureBackups = $false,
+
+        # Workspace Account Name for Patching
+        [Parameter(Mandatory=$false, 
+                   ValueFromPipeline=$false,
+                   ValueFromPipelineByPropertyName=$true, 
+                   ValueFromRemainingArguments=$false, 
+                   Position=27,
+                   ParameterSetName='Parameter Set 1')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $VaultID = 'null',
+
+        # Workspace Account Name for Patching
+        [Parameter(Mandatory=$false, 
+                   ValueFromPipeline=$false,
+                   ValueFromPipelineByPropertyName=$true, 
+                   ValueFromRemainingArguments=$false, 
+                   Position=28,
+                   ParameterSetName='Parameter Set 1')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $BackupPolicyName = 'null',
+
+        # Open HPSA Ports for Agent Deployment
+        [Parameter(Mandatory=$false, 
+                   ValueFromPipeline=$false,
+                   ValueFromPipelineByPropertyName=$true, 
+                   ValueFromRemainingArguments=$false, 
+                   Position=29,
+                   ParameterSetName='Parameter Set 1')]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $OpenHpsaPorts = 'false'
+
     )
-
-
-    function Add-AzureRmVmAntimalware($ResouceGroupName,$VMName)
+    if($psBoundParameters['verbose'])
     {
-    try
-    {
-        $Location = Get-AzureRmVM -ResourceGroupName $ResouceGroupName -Name $VMName -ErrorAction Stop
-        $AV = Get-AzureRmVMExtensionImage `
-                                -Location $Location.Location `
-                                -PublisherName 'Microsoft.Azure.Security' `
-                                -Type IaaSAntimalware `
-                                -ErrorAction Stop | 
-                                    Sort-Object -Property Version -Descending | 
-                                        Select -First 1
-        <# Getting major type number in below line as Set-AzureRMVMExtension does not support minor version numbers. #>
-        $avversion = $av.Version.Substring(0,$av.Version.Substring(0,($av.Version.LastIndexOfAny('.'))).LastIndexOfAny('.'))
-        $job = Set-AzureRmVMExtension `
-            -VMName $VMName `
-            -ResourceGroupName $ResouceGroupName `
-            -ExtensionType $av.Type `
-            -Publisher $av.PublisherName `
-            -Location $av.Location `
-            -Name $AV.Type `
-            -Settings @{"AntimalwareEnabled" = "true"} `
-            -TypeHandlerVersion $avversion `
-            -ErrorAction Stop -AsJob
-        Wait-Job -Job $job -Timeout 3600
-        Receive-Job -Job $job >> C:\Windows\Temp\AzureError.txt
+        $VerbosePreference = "Continue"
     }
-    catch
+    if (!(Get-AzureRmContext))
     {
-        throw $Error[0]
+        try
+        {
+            Connect-AzureRmAccount -Credential $Credential -Subscription $Subscriptionid -Scope Process -ErrorAction Stop
+            $FunctionLogin = $true
+            Write-Verbose "Logging into Azure Subscription $SubscriptionId"
+        }
+        catch
+        {
+            Write-Error 'No Azure RM Context found. Run Connect-AzureRMAccount before running this command or provide valid values for Credential and SubscriptionId parameters' -RecommendedAction 'Please authenticate via Connect-AzureRMAccount'
+            return
+        }
     }
-}
-
-    Login-AzureRmAccount -Credential $Credential -ErrorAction Stop | Out-Null
-    Select-AzureRmSubscription -SubscriptionId $SubscriptionId -ErrorAction Stop | Out-Null
+    else
+    {
+        Write-Verbose "Azure RM Context present. Continuing"
+    }
+    Write-Verbose "Creating random password"
     $vmpassword = Get-RandomPassword -Length 10
+    Write-Verbose "Creating credentials"
     $vmcreds = [pscredential]::new('TssaAdmin',($vmpassword | ConvertTo-SecureString -AsPlainText -Force))
+    Write-Verbose "Checking Storage Account Blob Endpoint"
     if($StorageAccountBlobEndpoint -ne 'null')
     {
         $storageaccountname = $StorageAccountBlobEndpoint.Substring(0,($StorageAccountBlobEndpoint.IndexOf('.'))).Replace('https://','')
+        Write-Verbose "Retrieving Storage Account details for $storageaccountname"
         $sgt = (Get-AzureRmStorageAccount -ResourceGroupName $ResourceGroup -Name $storageaccountname -ErrorAction Stop).Sku.Tier
     }
-
-    #Create the VM object
+    #region Create the VM object
+    Write-Verbose "Creating VM Object"
     $expression = "New-AzureRmVMConfig -VMName $hostName -VMSize $VMSize"
-    if($AvailabilitySetID -ne 'null'){$expression += " -AvailabilitySetId $AvailabilitySetID"}
-    #if($RegisterAzureAD -eq 'true'){$expression += " -IdentityType 'SystemAssigned'"}
-    if($OwnLicense -eq 'true'){$expression +=  " -LicenseType 'Windows_Server'"}
+    if($AvailabilitySetID -ne 'null')
+    {
+        $expression += " -AvailabilitySetId $AvailabilitySetID"
+    }
+    if($RegisterAzureAD -eq 'true')
+    {
+        $expression += " -IdentityType 'SystemAssigned'"
+    }
+    if($OwnLicense -eq 'true')
+    {
+        $expression +=  " -LicenseType 'Windows_Server'"
+    }
     $vmConfig = Invoke-Expression -Command $expression
     if($OsType -eq 'Windows')
     {
@@ -740,26 +1713,32 @@ function New-AzureRMVMFull ()
     }
     else
     {
-        #Disconnect-AzureRmAccount | Out-Null
+        if ($FunctionLogin)
+        {
+            Disconnect-AzureRmAccount -Scope Process | Out-Null
+        }
         throw 'Non-windows Currently not available'
-        Get-Variable | Remove-Variable -ErrorAction SilentlyContinue
+        return;
     }
     $adisks = Get-Variable -Name disk*
-
-    #If managed, set the type of disk chosen else, set the storage to Storage account based on the Disk code chosen. Choose storage account to use if applicable.
+#endregion
+    #region Managed Disks: If managed, set the type of disk chosen else, set the storage to Storage account based on the Disk code chosen. Choose storage account to use if applicable.
     switch ($StorageAccountBlobEndpoint)
     {
-        'null' {  
+        'null' {
+                    Write-Verbose "Configuring OS Disk on VMObject"  
                     Set-AzureRmVMOSDisk -VM $vmConfig -StorageAccountType $OsDiskTypeId -CreateOption FromImage -Windows -ErrorAction Stop | Out-Null
                     for ($i=0;$i -lt $adisks.Count;$i++)
                     {
                         if(($adisks[$i].Value -ne 0) -and ($adisks[$i].Value -ne 'null'))
                         {
+                            Write-Verbose "Adding data disks to VM Object"
                             Add-AzureRmVMDataDisk -CreateOption Empty -Lun $i -VM $vmConfig -DiskSizeInGB $adisks[$i].Value -Name "$Hostname-$($adisks[$i].Name)" -StorageAccountType $OsDiskTypeId -Caching None -ErrorAction Stop | Out-Null
                         }
                     }
                 }
         default {
+                    Write-Verbose "Configuring OS Disk on VMObject"
                     $storageuri = "$($StorageAccountBlobEndpoint)vhds/$Hostname/$Hostname-OSDisk.vhd"
                     Set-AzureRmVMOSDisk -VM $vmConfig -Name $hostName -Windows -VhdUri $storageuri -CreateOption FromImage -ErrorAction Stop | Out-Null
                     for ($i=0;$i -lt $adisks.Count;$i++)
@@ -767,16 +1746,18 @@ function New-AzureRMVMFull ()
                         if(($adisks[$i].Value -ne 0) -and ($adisks[$i].Value -ne 'null'))
                         {
                             $dduri = "$($StorageAccountBlobEndpoint)vhds/$Hostname/$Hostname-$($adisks[$i].Name).vhd"
+                            Write-Verbose "Adding data disks to VM Object"
                             Add-AzureRmVMDataDisk -VM $vmConfig -Name "$Hostname-$($adisks[$i].Name)" -DiskSizeInGB $adisks[$i].Value -VhdUri $dduri -CreateOption Empty -Lun $i -Caching None -ErrorAction Stop | Out-Null
                         }
                     }
                 }
     }
-
-    #Boot Diagnostics
+#endregion
+    #region Boot Diagnostics
     Set-AzureRmVMBootDiagnostics -VM $vmConfig -Disable -ErrorAction Stop | Out-Null
     if ($BootDiagnostics -eq 'true')
     {
+        Write-Verbose "Enabling VM Diagnostics"
         $vmConfig.DiagnosticsProfile.BootDiagnostics.Enabled = $true
         if(($StorageAccountBlobEndpoint -ne 'null') -and ($sgt -eq 'Standard'))
         {
@@ -792,27 +1773,30 @@ function New-AzureRMVMFull ()
         $vmConfig.DiagnosticsProfile.BootDiagnostics.Enabled = $false
         $vmConfig.DiagnosticsProfile.BootDiagnostics.StorageUri = $null
     }
-
-    #Public IP & Create NIC.
+#endregion
+    #region Public IP & Create NIC.
     switch($PublicIp)
     {
         {$_ -eq 'true'} {
-                        $Npublicip = New-AzureRmPublicIpAddress `
-                                        -Name "$Hostname-PIP" `
+                            Write-Verbose "Creating Public IP"
+                            $Npublicip = New-AzureRmPublicIpAddress `
+                                            -Name "$Hostname-PIP" `
+                                            -ResourceGroupName $ResourceGroup `
+                                            -Location $Location -Sku Basic `
+                                            -AllocationMethod Dynamic `
+                                            -IpAddressVersion IPv4 -ErrorAction Stop -Force
+                            Write-Verbose "Creating NIC"
+                            $nic = New-AzureRmNetworkInterface `
+                                        -Name "$Hostname-NIC" `
                                         -ResourceGroupName $ResourceGroup `
-                                        -Location $Location -Sku Basic `
-                                        -AllocationMethod Dynamic `
-                                        -IpAddressVersion IPv4 -ErrorAction Stop -Force
-                        $nic = New-AzureRmNetworkInterface `
-                                    -Name "$Hostname-NIC" `
-                                    -ResourceGroupName $ResourceGroup `
-                                    -Location $Location `
-                                    -SubnetId $SubnetID `
-                                    -NetworkSecurityGroupId $NetworkSecurityGroupId `
-                                    -PublicIpAddressId $NPublicIp.Id `
-                                    -Force -ErrorAction Stop
+                                        -Location $Location `
+                                        -SubnetId $SubnetID `
+                                        -NetworkSecurityGroupId $NetworkSecurityGroupId `
+                                        -PublicIpAddressId $NPublicIp.Id `
+                                        -Force -ErrorAction Stop
                         }
         {$_ -eq 'false'} {
+                            Write-Verbose "Creating NIC"
                             $nic = New-AzureRmNetworkInterface `
                                     -Name "$Hostname-NIC" `
                                     -ResourceGroupName $ResourceGroup `
@@ -822,440 +1806,64 @@ function New-AzureRMVMFull ()
                                     -Force -ErrorAction Stop
                         }
     }
-
+    Write-Verbose "Adding NIC to VMObject"
     Add-AzureRmVMNetworkInterface -VM $vmConfig -Id $nic.Id -ErrorAction Stop | Out-Null
-    #Build the VM
+#endregion
+    #region Build and configure VM
     try
     {
+        Write-Verbose "Starting VM Build"
         $job = New-AzureRmVM -ResourceGroupName $ResourceGroup -Location $Location -VM $VMConfig -ErrorAction Stop -AsJob
         Wait-Job -Job $job -Timeout 3600
-        Receive-Job -Job $job
-        Write-Verbose "$Hostname created sucessfully." -Verbose
+        Receive-Job -Job $job | Out-Null
+        Write-Verbose "VM $Hostname created sucessfully." 
         #Antivirus / Antimalware
         if($AntiMalware -eq 'true')
         {
-            Add-AzureRmVmAntimalware -ResouceGroupName $ResourceGroup -VMName $Hostname | Out-Null
-            if($?){Write-Verbose "AV Sucessfully added to VM." -Verbose}
+            Write-Verbose "Adding Antimalware to $Hostname..."
+            Add-AzureRmVmAntimalware -ResourceGroupName $ResourceGroup -VmName $Hostname -ErrorAction Stop
         }
-        $vm = Get-AzureRMVM -ResourceGroupName $ResourceGroup -Name $Hostname
-        #Disconnect-AzureRmAccount | Out-Null
+        #Open HPSA Ports
+        if ($OpenHpsaPorts -eq 'true')
+        {
+            Write-Verbose 'Opening local firewall ports for HPSA deployment'
+            $scriptpath = New-TempHpsaOpenPortScript
+            Invoke-AzureRmVMRunCommand -ResourceGroupName $ResourceGroup -VMName $Hostname -CommandId RunPowerShellScript -ScriptPath $scriptpath -ErrorAction Stop
+            Remove-Item -Path $scriptpath -Force
+        }
+        #Configure Patching
+        if($ConfigureUpdates -eq 'true')
+        {
+            Write-Verbose "Adding machine to Azure Update Management"
+            Add-AzureRMVMUpdateManagementConfig -VmName $Hostname -ResouceGroupName $ResourceGroup -WorkSpaceName $WorkSpaceName -AutomationAccountName $AutomationAccountName -ErrorAction Stop
+        }
+        #Enable Backups
+        if ($ConfigureBackups -eq 'true')
+        {
+            Write-Verbose "Configuring Backup"
+            Enable-AzureRmVmBackup -ResourceGroup $ResourceGroup -VMName $Hostname -PolicyName $BackupPolicyName -VaultID $VaultID -ErrorAction Stop
+        }
+        Write-Verbose "Retrieving machine config..."
+        $vm = Get-AzureRMVM -ResourceGroupName $ResourceGroup -Name $Hostname -ErrorAction Stop
         $vm.OSProfile.AdminPassword = $vmpassword
         return ($vm | ConvertTo-Json -Depth 100)
     }
     catch #Catch all failures and rollback.
     {
-        Remove-AzureRmNetworkInterface -Force -Name $nic.Name -ResourceGroupName $nic.ResourceGroupName -AsJob | Out-Null
-        if($PublicIp -eq 'true')
+        if (Get-AzureRmVm -ResourceGroupName $ResourceGroup -Name $Hostname)
         {
-            Remove-AzureRmPublicIpAddress -Force -Name $Npublicip.Name -ResourceGroupName $Npublicip.ResourceGroupName -AsJob | Out-Null
-        }
-        #Disconnect-AzureRmAccount | Out-Null
-
-    }
-    Get-Variable | Remove-Variable -ErrorAction SilentlyContinue
-}
-
-function Delete-AzureRMVMFull($SubscriptionId,$ResourceGroupName,$VMName,$Credential)
-{
-    Login-AzureRmAccount -Credential $Credential -SubscriptionId $SubscriptionId -ErrorAction Stop | Out-Null
-    #region Get VM Resources
-$VM = Get-AzureRmVM -ResourceGroupName $ResourceGroupName -Name $VMName -ErrorAction Stop
-$Nic = Get-AzureRmResource -ResourceId $Vm.NetworkProfile.NetworkInterfaces.Id -ExpandProperties -ErrorAction Stop
-try
-{
-    $PublicIP = Get-AzureRMResource -ResourceId $nic.Properties.ipConfigurations.properties.publicIPAddress.id -ExpandProperties -ErrorAction Stop
-}
-catch
-{
-        $PublicIP = 'N/A'
-}
-#endregion
-    #region Create Return Object
-[PSObject]$hash = 
-[ordered]@{
-    SubscriptionIdcriptionId = $SubscriptionId
-    ResourceGroupName = $ResourceGroupName
-    Location = $vm.Location
-    VmName = $vm.Name
-    NicName = $Nic.Name
-    PublicIpName = $PublicIP.Name
-    OsDiskName = $VM.StorageProfile.OsDisk.Name
-    VmStatus = $vm.StatusCode
-    OsDiskStatus = $null
-    NicStatus = $null
-    DataDisks = @()
-    PublicIpStatus = $null
-    BackupItemName = $null
-    BackupItemStatus = $null
-    BootDiagnosticsContainerName = $null
-    BootDiagnosticsContainerStatus = $null
-}
-#endregion
-    #region Stop and Deallocate the VM
-try
-{
-    Stop-AzureRmVM -ResourceGroupName $ResourceGroupName -Name $VM.Name -Force -ErrorAction Stop | Out-Null
-    $hash.VMStatus = 'Stopped and Deallocated'
-}
-catch
-{
-    $hash.VMStatus = 'Failed to Stop & Deallocate'
-    return ($hash | ConvertTo-Json)
-}
-#endregion
-    #region Delete the VM
-try
-{
-    Remove-AzureRmVM -Name $VM.Name -ResourceGroupName $ResourceGroupName -Force -ErrorAction Stop | Out-Null
-    $hash.VMStatus = 'Deleted'  
-}
-catch
-{
-    $hash.VMStatus = "Failed to Delete"
-    return ($hash | ConvertTo-Json)
-}
-#endregion
-    #region Remove Storage
-if($vm.StorageProfile.OsDisk.Vhd.Uri -ne $null)
-{
-    #Unmanaged Disks
-    $StorageAccName = $vm.StorageProfile.OsDisk.Vhd.Uri.Replace('https://','').Split('.')[0]
-    $OSDiskName = $vm.StorageProfile.OsDisk.Vhd.Uri.Split('/')[-1]
-    $StorageAcc = Get-AzureRmStorageAccount -Name $StorageAccName -ResourceGroupName $ResourceGroupName
-    $Container = ($vm.StorageProfile.OsDisk.Vhd.Uri.Replace($StorageAcc.PrimaryEndpoints.Blob,'')).Replace($OSDiskName,'').TrimEnd('/')
-    try
-    {
-        Get-AzureStorageBlob -Context $StorageAcc.Context -Blob $OSDiskName -Container $Container | Remove-AzureStorageBlob -Force -ErrorAction Stop | Out-Null
-        $hash.OsDiskStatus = 'Deleted'
-    }
-    catch
-    {
-        $hash.OsDiskStatus = 'Failed to Delete'
-    }
-}
-else
-{
-    #Managed Disks
-    try
-    {
-        Remove-AzureRmDisk -ResourceGroupName $ResourceGroupName -DiskName $vm.StorageProfile.OsDisk.Name -Force -ErrorAction Stop | Out-Null
-        $hash.OsDiskStatus = 'Deleted'
-
-    }
-    catch
-    {
-        $hash.OsDiskStatus = 'Failed to Delete'
-    }
-}
-if($vm.StorageProfile.DataDisks -ne $null)
-{
-    foreach($disk in $vm.StorageProfile.DataDisks)
-    {    
-        if($disk.Vhd.Uri -ne $null)
-        {
-            #Unmanaged Disks
-            $StorageAccName = $disk.Vhd.Uri.Replace('https://','').Split('.')[0]
-            $StorageAcc = Get-AzureRmStorageAccount -Name $StorageAccName -ResourceGroupName $ResourceGroupName
-            $DiskName = $disk.Vhd.Uri.Split('/')[-1]
-            $Container = $disk.Vhd.Uri.Replace($StorageAcc.PrimaryEndpoints.Blob,'').Replace($DiskName,'').TrimEnd('/')
-            try
-            {
-                Get-AzureStorageBlob -Context $StorageAcc.Context.Context -Blob $DiskName -Container $Container -DefaultProfile $StorageAcc.Context | Remove-AzureStorageBlob -Force -ErrorAction Stop | Out-Null
-                $hash.DataDisks += 
-                    @{
-                        Name = $disk.Name
-                        DiskStatus = 'Deleted'
-                    }
-            }
-            catch
-            {
-                $hash.DataDisks += 
-                    @{
-                        Name = $disk.Name
-                        DiskStatus = 'Failed to Delete'
-                    }
-            }
+            Delete-AzureRMVMFull -ResourceGroupName $ResourceGroup -VmName $Hostname
         }
         else
         {
-            #Managed Disks
-            try
+            Remove-AzureRmNetworkInterface -Force -Name $nic.Name -ResourceGroupName $nic.ResourceGroupName -AsJob | Out-Null
+            if($Npublicip)
             {
-                Remove-AzureRmDisk -ResourceGroupName $ResourceGroupName -DiskName $disk.Name -Force -ErrorAction Stop | Out-Null
-                $hash.DataDisks += 
-                    @{
-                        Name = $disk.Name
-                        DiskStatus = 'Deleted'
-                    }
+                $Npublicip | Remove-AzureRmPublicIpAddress -Force -AsJob | Out-Null
             }
-            catch
-            {
-                $hash.DataDisks += 
-                    @{
-                        Name = $disk.Name
-                        DiskStatus = 'Failed to Delete'
-                    }            
-            }
-            #
-        }    
+        }
+        throw $Error[0]
+        return
     }
-}
 #endregion
-    #region Remove NICs
-    try
-    {
-        Remove-AzureRmResource -ResourceId $nic.Id -Force -ErrorAction Stop | Out-Null
-        $hash.NicStatus = 'Deleted'
-    }
-    catch
-    {
-        $hash.NicStatus = "Failed to Delete"
-    }
-    #endregion
-    #region Remove Public IPs
-if($PublicIP -ne $null)
-{
-    try
-    {
-        Remove-AzureRmResource -ResourceId $PublicIP.Id -Force -ErrorAction Stop | Out-Null
-        $hash.PublicIpStatus = "Deleted"
-    }
-    catch
-    {
-        $hash.PublicIpStatus = "Failed to Delete"
-    }
-}
-#endregion
-    #region Disable Backups
-$vaults = Get-AzureRmRecoveryServicesVault -ResourceGroupName $ResourceGroupName
-if($vaults -ne $null)
-{
-    foreach ($v in $vaults)
-    {
-        Set-AzureRmRecoveryServicesVaultContext -Vault $v | Out-Null
-        $Vms = Get-AzureRmRecoveryServicesBackupContainer -ContainerType AzureVM
-        if($Vms -ne $null)
-        {
-            foreach($vmBackup in $Vms)
-            {
-                if($vmBackup.FriendlyName -match $VMName)
-                {
-                    $backupitem = Get-AzureRmRecoveryServicesBackupItem -Container $vmBackup -WorkloadType AzureVM
-                    try
-                    {
-                        Disable-AzureRmRecoveryServicesBackupProtection -Item $backupitem -Force -ErrorAction Stop | Out-Null
-                        $hash.BackupItemName = $vmBackup.FriendlyName
-                        $hash.BackupItemStatus = 'Disabled'
-                    }
-                    catch
-                    {
-                        $hash.BackupItemName = $vmBackup.FriendlyName
-                        $hash.BackupItemStatus = 'Failed to Disable'
-                    }
-
-                }
-            }
-        }
-    }
-}
-#endregion
-    #region Remove Boot Diagnostics
-if($vm.DiagnosticsProfile.bootDiagnostics.storageUri -ne $null)
-{
-    try
-    {
-        $StorageAccName = $vm.DiagnosticsProfile.bootDiagnostics.storageUri.Replace('https://','').Split('.')[0]
-        $StorageAcc = Get-AzureRmStorageAccount -Name $StorageAccName -ResourceGroupName $ResourceGroupName -ErrorAction Stop
-        $ContainerName = Get-AzureStorageContainer -Name "bootdiagnostics-$($vmname.ToLower())-*" -Context $StorageAcc.Context.Context -ErrorAction Stop
-        Remove-AzureStorageContainer -Name $ContainerName.Name -Force -PassThru -Context $StorageAcc.Context.Context -ErrorAction Stop | Out-Null
-        $hash.BootDiagnosticsContainerName = $ContainerName.Name
-        $hash.BootDiagnosticsContainerStatus = "Deleted Sucessfully"
-    }
-    catch
-    {
-        $hash.BootDiagnosticsContainerStatus = "Failed to Delete"
-    }
-}
-#endregion
-    return ($hash | ConvertTo-Json -Depth 10)
-}
-
-function Get-VMWareSerialNumber($UUID)
-{
-    $uuid = $uuid.Replace('-','')
-    $sn = ''
-    for ($i=0;$i -lt $uuid.Length; $i+=2)
-    {
-        $sn += $uuid.Substring($i,2)
-        $sn += ' '
-    }
-    $str1 = $sn.Substring(0,23)
-    $str2 = $sn.Substring(24)
-    $sn = ("VMWARE-$str1-$str2").ToUpper()
-    return $sn
-}
-
-function Get-VmwareVmToolStatus($VC,$UserName,$Password,$serversToSkip)
-{
-    try
-    {
-        Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Scope Session -ProxyPolicy NoProxy -ParticipateInCeip:$false -Confirm:$false -ErrorAction Stop | Out-Null
-        Connect-VIServer $VC -Username $UserName -Password $Password -ErrorAction Stop | Out-Null
-        Write-Verbose "trying $vc" -Verbose
-        $VMObjects = Get-VM -ea Stop
-        $newobj = $VMObjects | ? {(($_.ExtensionData.Summary.Guest.ToolsVersionStatus -match 'guestToolsNeedUpgrade') -or ($_.ExtensionData.Summary.Guest.ToolsVersionStatus -match 'guestToolsNotInstalled'))} |
-                    Select  @{n='HostName';e={$_.Guest.HostName}},
-                    Name,
-                    @{n='UUID';e={$_.ExtensionData.Summary.Config.UUID}},
-                    @{n='SerialNumber';e={Get-VMWareSerialNumber -UUID $_.ExtensionData.Summary.Config.UUID}},
-                    @{n='HardwareVersion';e={$_.Version}},
-                    @{n='ToolsVersion';e={($_ | Get-VMGuest).ToolsVersion}},
-                    @{n='ToolsStatus';e={(SplitText($_.ExtensionData.Guest.ToolsStatus)) -join ' '}},
-                    @{n='ToolsRunningStatus';e={(SplitText($_.ExtensionData.Guest.ToolsRunningStatus)) -join ' '}}
-        Disconnect-VIServer $vc -Confirm:$false -Force | Out-Null
-        if($serversToSkip)
-        {
-            $searchblock = New-DynamicSearchFilter -PowershellProperty '$_.Name' -SubComparisonOperator '-notmatch' -ComparisonOperator '-and' -String $serversToSkip
-            return ($newobj | ? ([scriptblock]::Create($searchblock)))
-        }
-        else
-        {
-            return $newobj
-        }
-    }
-    catch
-    {
-        Write-Verbose "failed to connect to $vc" -Verbose
-    }
-}
-
-<#
-.Synopsis
-Dynamic Search Filter Creator for Multiple Arguments
-.DESCRIPTION
-
-This function builds a Dynamic Search Filter string for Powershell filters within If Statements or Where statements. Instead of builing multiple ifs within a statement, let Powershell do it for you :)
-    
-This is usefull in orchestration environments where the string get's created from a different output.
-.
-.EXAMPLE
-
-    $Value = New-DynamicSearchFilter -PowershellProperty '$_.Name' -SubComparisonOperator '-match' -ComparisonOperator '-or' -String 'BITS,WORKSTATION,SPOOLER,SECLOGON'
-
-    $Value
-    
-    ($_.Name -match 'BITS') -or ($_.Name -match 'WORKSTATION') -or ($_.Name -match 'SECLOGON')     
-
-    Get-Service | Where ([scriptblock]::Create($Value))
-
-    Status   Name               DisplayName                           
-    ------   ----               -----------                           
-    Stopped  BITS               Background Intelligent Transfer Ser...
-    Running  LanmanWorkstation  Workstation                           
-    Stopped  seclogon           Secondary Logon 
-
-.OUTPUTS
-[String] object
-#>
-function New-DynamicSearchFilter
-{
-    [CmdletBinding(DefaultParameterSetName='Main Set 0', 
-                  SupportsShouldProcess=$false, 
-                  PositionalBinding=$false,
-                  HelpUri = 'http://www.ExchangeSA.co.za/ -or Jordach.Singh@ExchangeSA.co.za',
-                  ConfirmImpact='Low')]
-    [Alias()]
-    [OutputType([String])]
-    Param
-    (
-        # Input Powershell Pipline Character or Property as a plain string with single quotes. Eg.: '$_' or '$_.Property1' or '$_.Name' etc.
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=0,ParameterSetName='Main Set 0')]
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=0,ParameterSetName='Main Set 1')]
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=0,ParameterSetName='Main Set 2')]
-        [ValidateNotNull()]
-        [ValidateNotNullOrEmpty()]
-        [string]
-        $PowershellProperty,
-
-        # Input Powershell Comparison Operator as a plain string with single quotes and no spaces. Eg.: '-and' or '-or' or '-match' etc. This will form part of the inner expression.
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=1,ParameterSetName='Main Set 0')]
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=1,ParameterSetName='Main Set 1')]
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=1,ParameterSetName='Main Set 2')]
-        [ValidateNotNull()]
-        [ValidateNotNullOrEmpty()]
-        [string]
-        $SubComparisonOperator,
-
-        # Input Powershell Comparison Operator as a plain string with single quotes and no spaces. Eg.: '-and' or '-or' or '-match' etc. This will form part of the outer expression.
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=2,ParameterSetName='Main Set 0')]
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=2,ParameterSetName='Main Set 1')]
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=2,ParameterSetName='Main Set 2')]
-        [ValidateNotNull()]
-        [ValidateNotNullOrEmpty()]
-        [string]
-        $ComparisonOperator,
-
-        # Input Powershell data as a plain comma seperated string with single quotes. Eg.: 'value1,value2,value3'. This will form part of value for each inner expression. In the examplem there will be 3 comparisons done.
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=3,ParameterSetName='Main Set 0')]
-        [ValidateNotNull()]
-        [ValidateNotNullOrEmpty()]
-        [string]
-        $String,
-
-        # Input Powershell data as an string array object. Eg.: @('value1','value2','value3') etc. This will form part of value for each inner expression. In the examplem there will be 3 comparisons done.
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=3,ParameterSetName='Main Set 1')]
-        [ValidateNotNull()]
-        [ValidateNotNullOrEmpty()]
-        [array]
-        $StringArray,
-
-        # Input Powershell data as an integer array object. Eg.: @(7,25,9,989,12) etc. This will form part of value for each inner expression. In the examplem there will be 5 comparisons done.
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false,ValueFromPipelineByPropertyName=$false,ValueFromRemainingArguments=$false,Position=3,ParameterSetName='Main Set 2')]
-        [ValidateNotNull()]
-        [ValidateNotNullOrEmpty()]
-        [array]
-        $IntArray
-    )
-
-    if ($String)
-    {
-        $stringarr = $string.Split(',')
-    }
-    elseif($IntArray)
-    {
-        [array]$stringarr = $IntArray
-    }
-    elseif($StringArray)
-    {
-        [array]$stringarr = $StringArray
-    }
-
-        $newstring = ''
-    if ($stringarr.Count -gt 1)
-    {
-        for ($i = 0; $i -lt ($stringarr.Count - 1); $i++)
-        {
-            if (($stringarr[$i]).getType() -eq [string])
-            {
-                $newstring += "($PowershellProperty $SubComparisonOperator '$($stringarr[$i])') $ComparisonOperator "
-            }
-            else
-            {
-                $newstring += "($PowershellProperty $SubComparisonOperator $($stringarr[$i])) $ComparisonOperator "
-            }
-        }
-        if (($stringarr[$i]).getType() -eq [string])
-        {
-            $newstring += "($PowershellProperty $SubComparisonOperator '$($stringarr[-1])')"
-        }
-        else
-        {
-            $newstring += "($PowershellProperty $SubComparisonOperator $($stringarr[-1]))"
-        }
-    }
-    elseif ($stringarr.Count -eq 1)
-    {
-       "($PowershellProperty $SubComparisonOperator $($stringarr[-1]))" 
-    }
-    return $newstring
 }
