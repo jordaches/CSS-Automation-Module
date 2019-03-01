@@ -97,6 +97,7 @@ function Add-AzureRmVmAntimalware
     {
         try
         {
+            Write-Verbose "No Azure RM Context found. Attempting to login..."
             Connect-AzureRmAccount -Credential $Credential -Subscription $Subscriptionid -Scope Process -ErrorAction Stop
             $FunctionLogin = $true
         }
@@ -134,6 +135,7 @@ function Add-AzureRmVmAntimalware
         Receive-Job -Job $job | Out-Null
         if ($FunctionLogin)
         {
+            Write-Verbose "Function login present. Logout in progress..."
             Disconnect-AzureRmAccount -Scope Process | Out-Null
         }
         Write-Verbose "Antimalware on $VmName enabled successfully."
@@ -221,6 +223,7 @@ function Add-AzureRMVMUpdateManagementConfig
     {
         try
         {
+            Write-Verbose "No Azure RM Context found. Attempting to login..."
             Connect-AzureRmAccount -Credential $Credential -Subscription $Subscriptionid -Scope Process -ErrorAction Stop
             $FunctionLogin = $true
         }
@@ -232,6 +235,7 @@ function Add-AzureRMVMUpdateManagementConfig
     }
     try
     {
+        Write-Verbose "Retrieving Update management details."
         $AutomationAcc = Get-AzureRMAutomationAccount -ResourceGroupName $ResouceGroupName -Name $AutomationAccountName -ErrorAction Stop
         $AutomationResId = Get-AzureRmResource -ResourceType 'Microsoft.Automation/automationAccounts' -Name $AutomationAcc.AutomationAccountName -ErrorAction Stop
         $WorkSpaceInfo = Get-AzureRmOperationalInsightsWorkspace -ResourceGroupName $ResouceGroupName -Name $WorkSpaceName -ErrorAction Stop
@@ -241,6 +245,7 @@ function Add-AzureRMVMUpdateManagementConfig
     {
         if ($FunctionLogin)
         {
+            Write-Verbose "Function login present. Logout in progress..."
             Disconnect-AzureRmAccount -Scope Process | Out-Null
         }
         throw $Error[0]
@@ -251,6 +256,7 @@ function Add-AzureRMVMUpdateManagementConfig
     {
         if ($FunctionLogin)
         {
+            Write-Verbose "Function login present. Logout in progress..."
             Disconnect-AzureRmAccount -Scope Process | Out-Null
         }
         Write-Error -Message 'Correlation between Automation Account and Workspace not found. Please deploy Update Management solution via Azure portal.'
@@ -279,6 +285,7 @@ function Add-AzureRMVMUpdateManagementConfig
         New-AzureRmResourceGroupDeployment -ResourceGroupName $ResouceGroupName -TemplateUri $MMATemplateLinkUri -Name $DeploymentName -TemplateParameterObject $MMADeploymentParams -ApiVersion 2015-06-15 -Force | Out-Null
         if ($FunctionLogin)
         {
+            Write-Verbose "Function login present. Logout in progress..."
             Disconnect-AzureRmAccount -Scope Process | Out-Null
         }
         Write-Verbose "Azure Update Management enabled sucessfully on $VmName"
@@ -288,6 +295,7 @@ function Add-AzureRMVMUpdateManagementConfig
     {
         if ($FunctionLogin)
         {
+            Write-Verbose "Function login present. Logout in progress..."
             Disconnect-AzureRmAccount -Scope Process | Out-Null
         }
         throw $Error[0]
@@ -384,6 +392,7 @@ function Enable-AzureRmVmBackup
     {
         try
         {
+            Write-Verbose "No Azure RM Context found. Attempting to login..."
             Connect-AzureRmAccount -Credential $Credential -Subscription $Subscriptionid -Scope Process -ErrorAction Stop
             $FunctionLogin = $true
         }
@@ -395,18 +404,23 @@ function Enable-AzureRmVmBackup
     }
     try
     {
+        Write-Verbose "Retrieving backup policy."
         $Policy = Get-AzureRmRecoveryServicesBackupProtectionPolicy -Name $PolicyName -VaultId $VaultID -ErrorAction Stop
+        Write-Verbose "Attempting to enable backup on $VMName"
         Enable-AzureRmRecoveryServicesBackupProtection -Name $VMName -Policy $Policy -ResourceGroupName $ResourceGroup -VaultId $VaultID -ErrorAction Stop
         if ($FunctionLogin)
         {
+            Write-Verbose "Function login present. Logout in progress..."
             Disconnect-AzureRmAccount -Scope Process | Out-Null
         }
         Write-Verbose "Backups on `"$VMName`" enabled sucessfully. Policy: $PolicyName"
     }
     catch
     {
+        Write-Verbose "Failed to enable backup on $VMName"
         if ($FunctionLogin)
         {
+            Write-Verbose "Function login present. Logout in progress..."
             Disconnect-AzureRmAccount -Scope Process | Out-Null
         }
         throw $Error[0]
@@ -500,6 +514,7 @@ function Disable-AzureRmVmBackup
     {
         try
         {
+            Write-Verbose "No Azure RM Context found. Attempting to login..."
             Connect-AzureRmAccount -Credential $Credential -Subscription $Subscriptionid -Scope Process -ErrorAction Stop
             $FunctionLogin = $true
         }
@@ -525,6 +540,7 @@ function Disable-AzureRmVmBackup
         }
         if ($FunctionLogin)
         {
+            Write-Verbose "Function login present. Logout in progress..."
             Disconnect-AzureRmAccount -Scope Process | Out-Null
         }
     }
@@ -532,6 +548,7 @@ function Disable-AzureRmVmBackup
     {
         if ($FunctionLogin)
         {
+            Write-Verbose "Function login present. Logout in progress..."
             Disconnect-AzureRmAccount -Scope Process | Out-Null
         }
         throw $Error[0]
@@ -1013,6 +1030,7 @@ function Delete-AzureRMVMFull
     {
         try
         {
+            Write-Verbose "No Azure RM Context found. Attempting to login..."
             Connect-AzureRmAccount -Credential $Credential -Subscription $Subscriptionid -Scope Process -ErrorAction Stop
             $FunctionLogin = $true
         }
@@ -1031,10 +1049,11 @@ function Delete-AzureRMVMFull
     }
     catch
     {
-        <#if ($FunctionLogin)
+        if ($FunctionLogin)
         {
+            Write-Verbose "Function login present. Logout in progress..."
             Disconnect-AzureRmAccount -Scope Process | Out-Null
-        }#>
+        }
         throw $Error[0]
         return
     }
@@ -1077,10 +1096,11 @@ function Delete-AzureRMVMFull
     catch
     {
         $hash.VMStatus = 'Failed to Stop & Deallocate'
-        <#if ($FunctionLogin)
+        if ($FunctionLogin)
         {
+            Write-Verbose "Function login present. Logout in progress..."
             Disconnect-AzureRmAccount -Scope Process | Out-Null
-        }#>
+        }
         throw $Error[0]
         return ($hash | ConvertTo-Json)
         return
@@ -1095,10 +1115,11 @@ function Delete-AzureRMVMFull
     catch
     {
         $hash.VMStatus = "Failed to Delete"
-        <#if ($FunctionLogin)
+        if ($FunctionLogin)
         {
+            Write-Verbose "Function login present. Logout in progress..."
             Disconnect-AzureRmAccount -Scope Process | Out-Null
-        }#>
+        }
         throw $Error[0]
         return ($hash | ConvertTo-Json)
         return
@@ -1282,10 +1303,11 @@ function Delete-AzureRMVMFull
         }
     }
 #endregion
-    <#if ($FunctionLogin)
+    if ($FunctionLogin)
     {
+        Write-Verbose "Function login present. Logout in progress..."
         Disconnect-AzureRmAccount -Scope Process | Out-Null
-    }#>
+    }
     return ($hash | ConvertTo-Json -Depth 10)
 }
 
@@ -1665,8 +1687,8 @@ function New-AzureRMVMFull
     {
         try
         {
+            Write-Verbose "No Azure RM Context found. Attempting to login..."
             Connect-AzureRmAccount -Credential $Credential -Subscription $Subscriptionid -Scope Process -ErrorAction Stop
-            $FunctionLogin = $true
             Write-Verbose "Logging into Azure Subscription $SubscriptionId"
         }
         catch
@@ -1715,6 +1737,7 @@ function New-AzureRMVMFull
     {
         if ($FunctionLogin)
         {
+            Write-Verbose "Function login present. Logout in progress..."
             Disconnect-AzureRmAccount -Scope Process | Out-Null
         }
         throw 'Non-windows Currently not available'
