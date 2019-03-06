@@ -195,7 +195,7 @@ function Add-AzureRMVMUpdateManagementConfig
             Position=3,
             ParameterSetName='Parameter Set 1')]
         [string]
-        $ResouceGroupName,
+        $ResourceGroupName,
         #Azure Workspace name (Needs to be deployed via Update Solution)
         [Parameter(Mandatory=$true, 
             ValueFromPipeline=$true,
@@ -236,10 +236,10 @@ function Add-AzureRMVMUpdateManagementConfig
     try
     {
         Write-Verbose "Retrieving Update management details."
-        $AutomationAcc = Get-AzureRMAutomationAccount -ResourceGroupName $ResouceGroupName -Name $AutomationAccountName -ErrorAction Stop
+        $AutomationAcc = Get-AzureRMAutomationAccount -ResourceGroupName $ResourceGroupName -Name $AutomationAccountName -ErrorAction Stop
         $AutomationResId = Get-AzureRmResource -ResourceType 'Microsoft.Automation/automationAccounts' -Name $AutomationAcc.AutomationAccountName -ErrorAction Stop
-        $WorkSpaceInfo = Get-AzureRmOperationalInsightsWorkspace -ResourceGroupName $ResouceGroupName -Name $WorkSpaceName -ErrorAction Stop
-        $VM = Get-AzureRmVM -ResourceGroupName $ResouceGroupName -Name $VmName -ErrorAction Stop
+        $WorkSpaceInfo = Get-AzureRmOperationalInsightsWorkspace -ResourceGroupName $ResourceGroupName -Name $WorkSpaceName -ErrorAction Stop
+        $VM = Get-AzureRmVM -ResourceGroupName $ResourceGroupName -Name $VmName -ErrorAction Stop
     }
     catch
     {
@@ -282,7 +282,7 @@ function Add-AzureRMVMUpdateManagementConfig
     $DeploymentName = "AutomationControl-PS-" + (Get-Date).ToFileTimeUtc()
     try
     {
-        New-AzureRmResourceGroupDeployment -ResourceGroupName $ResouceGroupName -TemplateUri $MMATemplateLinkUri -Name $DeploymentName -TemplateParameterObject $MMADeploymentParams -ApiVersion 2015-06-15 -Force | Out-Null
+        New-AzureRmResourceGroupDeployment -ResourceGroupName $ResourceGroupName -TemplateUri $MMATemplateLinkUri -Name $DeploymentName -TemplateParameterObject $MMADeploymentParams -ApiVersion 2015-06-15 -Force | Out-Null
         if ($FunctionLogin)
         {
             Write-Verbose "Function login present. Logout in progress..."
@@ -1858,7 +1858,7 @@ function New-AzureRMVMFull
         if($ConfigureUpdates -eq 'true')
         {
             Write-Verbose "Adding machine to Azure Update Management"
-            Add-AzureRMVMUpdateManagementConfig -VmName $Hostname -ResouceGroupName $ResourceGroup -WorkSpaceName $WorkSpaceName -AutomationAccountName $AutomationAccountName -ErrorAction Stop
+            Add-AzureRMVMUpdateManagementConfig -VmName $Hostname -ResourceGroupName $ResourceGroup -WorkSpaceName $WorkSpaceName -AutomationAccountName $AutomationAccountName -ErrorAction Stop
         }
         #Enable Backups
         if ($ConfigureBackups -eq 'true')
