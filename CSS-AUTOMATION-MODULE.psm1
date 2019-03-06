@@ -1520,7 +1520,7 @@ function New-AzureRMVMFull
         [ValidateNotNull()]
         [ValidateNotNullOrEmpty()]
         [string]
-        $RegisterAzureAD = 'true',
+        $RegisterAzureAD = 'false',
         
         # Enable Anti Malware Extension
         [Parameter(Mandatory=$false, 
