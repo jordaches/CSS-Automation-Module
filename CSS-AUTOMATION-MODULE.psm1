@@ -604,19 +604,19 @@ function Get-AzureAvailableResources
                                 id =  $A.Location
                                 vmsizes = Foreach ($vmsize in ($VMSizes | Where {$_.Locations -eq $A.location}))
                                             {
-                                                if(($vmsize.LocationInfo.Zones.Count) -ge 3){$RegionSupportsHA = 'true'}
+                                                if(($vmsize.LocationInfo.Zones.Count) -ge 2){$RegionSupportsHA = 'true'}
                                                 [ordered]@{
                                                             #VMSize Properties
                                                             name = $vmsize.Name
                                                             id = $vmsize.Name
-                                                            vCPU = ($vmsize.Capabilities | Where {$_.name -Match 'vCPUs'}).Value
-                                                            MemoryGB = ($vmsize.Capabilities | Where {$_.name -Match 'MemoryGB'}).Value
-                                                            OSVhdSizeMB = ($vmsize.Capabilities | Where {$_.name -Match 'OSVhdSizeMB'}).Value
-                                                            TempStorageMB = ($vmsize.Capabilities | Where {$_.name -Match 'MaxResourceVolumeMB'}).Value
-                                                            MaxDataDiskCount = ($vmsize.Capabilities | Where {$_.name -Match 'MaxDataDiskCount'}).Value
-                                                            PremiumStorageSupport = ($vmsize.Capabilities | Where {$_.name -Match 'PremiumIO'}).Value
-                                                            LowPriorityCapable = ($vmsize.Capabilities | Where {$_.name -Match 'LowPriorityCapable'}).Value
-                                                            HighAvailability = if(($vmsize.LocationInfo.Zones.Count) -ge 3){$vmsize.LocationInfo.Zones}else{"Not available"}
+                                                            vCPU = ($vmsize.Capabilities | Where {$_.name -eq 'vCPUs'}).Value
+                                                            MemoryGB = ($vmsize.Capabilities | Where {$_.name -eq 'MemoryGB'}).Value
+                                                            OSVhdSizeMB = ($vmsize.Capabilities | Where {$_.name -eq 'OSVhdSizeMB'}).Value
+                                                            TempStorageMB = ($vmsize.Capabilities | Where {$_.name -eq 'MaxResourceVolumeMB'}).Value
+                                                            MaxDataDiskCount = ($vmsize.Capabilities | Where {$_.name -eq 'MaxDataDiskCount'}).Value
+                                                            PremiumStorageSupport = ($vmsize.Capabilities | Where {$_.name -eq 'PremiumIO'}).Value
+                                                            LowPriorityCapable = ($vmsize.Capabilities | Where {$_.name -eq 'LowPriorityCapable'}).Value
+                                                            HighAvailability = if(($vmsize.LocationInfo.Zones.Count) -ge 2){$vmsize.LocationInfo.Zones}else{"Not available"}
                                                             Tier = $vmsize.Tier
                                                         }                                       
                              
