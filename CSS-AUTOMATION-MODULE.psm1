@@ -236,9 +236,9 @@ function Add-AzureRMVMUpdateManagementConfig
     try
     {
         Write-Verbose "Retrieving Update management details."
-        $AutomationAcc = Get-AzureRMAutomationAccount -ResourceGroupName $ResourceGroupName -Name $AutomationAccountName -ErrorAction Stop
+        $AutomationAcc = Get-AzureRMAutomationAccount -ErrorAction Stop | ? {$_.AutomationAccountName -eq $AutomationAccountName}
         $AutomationResId = Get-AzureRmResource -ResourceType 'Microsoft.Automation/automationAccounts' -Name $AutomationAcc.AutomationAccountName -ErrorAction Stop
-        $WorkSpaceInfo = Get-AzureRmOperationalInsightsWorkspace -ResourceGroupName $ResourceGroupName -Name $WorkSpaceName -ErrorAction Stop
+        $WorkSpaceInfo = Get-AzureRmOperationalInsightsWorkspace -ErrorAction Stop | ? {$_.Name -eq $WorkSpaceName}
         $VM = Get-AzureRmVM -ResourceGroupName $ResourceGroupName -Name $VmName -ErrorAction Stop
     }
     catch
