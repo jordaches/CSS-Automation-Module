@@ -788,7 +788,7 @@ function Get-AzureClientResources
                                                         %{
                                                              [ordered]@{
                                                                 name = $_.Name
-                                                                id = $_.ResourceId
+                                                                id = $_.Name
                                                                 Location = $_.Location
                                                                 Tags = foreach ($ta in $_.Tags.Keys){[ordered]@{name=$ta;Value=$_.Tags[$ta]}}
                                                                 Sku = $_.Sku
@@ -933,6 +933,7 @@ function Get-AzureClientResources
                                     VMNets = $VMNets
                                     'Availability Sets' = $AvailabilitySets
                                     'Automation Accounts' = $AutomationAccounts
+                                    'LogAnalyticsWorkspace' = $LogAnalyticsWorkspace
                                     'Virtual Machines' = $VMs
                                     'Recovery Services Vault' = $RecoveryServicesVault
                                     'Unused Disks' = $Disks
